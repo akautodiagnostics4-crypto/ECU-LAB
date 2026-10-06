@@ -1,33 +1,30 @@
 name: Build ECU-LAB APK
 on: [push]
-
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
-
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
-
       - name: Create missing files
         run: |
           keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Debug, OU=Debug, O=Debug, L=Debug, S=Debug, C=US" || true
-          keytool -genkey -v -keystore app/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Debug, OU=Debug, O=Debug, L=Debug, S=Debug, C=US" || true
-          echo '{"project_info":{"project_number":"123","project_id":"ecu-lab","storage_bucket":"ecu-lab.appspot.com"},"client":[{"client_info":{"mobilesdk_app_id":"1:123:android:abc","android_client_info":{"package_name":"com.eculab"}},"oauth_client":[],"api_key":[{"current_key":"dummy"}],"services":{"appinvite_service":{"other_platform_oauth_client":[]}}}],"configuration_version":"1"}' > app/google-services.json
-          mkdir -p ~/.android
-          echo "count=0" > ~/.android/repositories.cfg
+          mkdir -p app
+          cp debug.keystore app/debug.keystore || true
+          # THIS IS THE FIX - Exact package name com.anonymous.EcuLab
+          echo '{"project_info":{"project_number":"123456","project_id":"ecu-lab-test","storage_bucket":"ecu-lab-test.appspot.com"},"client":[{"client_info":{"mobilesdk_app_id":"1:123456:android:abcdef","android_client_info":{"package_name":"com.anonymous.EcuLab"}},"oauth_client":[],"api_key":[{"current_key":"AIzaSyDummyKey1234567890"}],"services":{"appinvite_service":{"other_platform_oauth_client":[]}}}],"configuration_version":"1"}' > app/google-services.json
+          echo "Created google-services.json for com.anonymous.EcuLab:"
+          cat app/google-services.json
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
           yes | sdkmanager --licenses || true
-
       - name: Build APK
-        run: gradle assembleDebug --stacktrace
-
+        run: gradle assembleDebug --stacktrace -Dorg.gradle.configuration-cache=false
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
