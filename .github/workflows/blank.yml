@@ -1,5 +1,5 @@
 name: Build ECU-LAB APK
-on: push
+on: [push]
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -10,15 +10,13 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
       - name: Create missing files
         run: |
           keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Debug, OU=Debug, O=Debug, L=Debug, S=Debug, C=US" || true
           keytool -genkey -v -keystore app/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Debug, OU=Debug, O=Debug, L=Debug, S=Debug, C=US" || true
-          echo '{"project_info":{"project_number":"123456","project_id":"ecu-lab","storage_bucket":"ecu-lab.appspot.com"},"client":[{"client_info":{"mobilesdk_app_id":"1:123456:android:abc","android_client_info":{"package_name":"com.eculab"}},"oauth_client":[],"api_key":[{"current_key":"dummy"}],"services":{"appinvite_service":{"other_platform_oauth_client":[]}}}],"configuration_version":"1"}' > app/google-services.json
+          echo '{"project_info":{"project_number":"123","project_id":"ecu-lab","storage_bucket":"ecu-lab.appspot.com"},"client":[{"client_info":{"mobilesdk_app_id":"1:123:android:abc","android_client_info":{"package_name":"com.eculab"}},"oauth_client":[],"api_key":[{"current_key":"dummy"}],"services":{"appinvite_service":{"other_platform_oauth_client":[]}}}],"configuration_version":"1"}' > app/google-services.json
           yes | sdkmanager --licenses || true
       - name: Build Debug APK
         run: gradle assembleDebug --stacktrace
