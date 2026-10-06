@@ -12,15 +12,23 @@ jobs:
           distribution: 'temurin'
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
-      - name: Create missing files
+      - name: Create files and fix build.gradle
         run: |
           keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Debug, OU=Debug, O=Debug, L=Debug, S=Debug, C=US" || true
           keytool -genkey -v -keystore app/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Debug, OU=Debug, O=Debug, L=Debug, S=Debug, C=US" || true
-          echo '{"project_info":{"project_number":"123","project_id":"ecu-lab","storage_bucket":"ecu-lab.appspot.com"},"client":[{"client_info":{"mobilesdk_app_id":"1:123:android:abc","android_client_info":{"package_name":"com.eculab"}},"oauth_client":[],"api_key":[{"current_key":"dummy"}],"services":{"appinvite_service":{"other_platform_oauth_client":[]}}}],"configuration_version":"1"}' > app/google-services.json
+          cp debug.keystore app/debug.keystore || true
+          echo '{"project_info":{"project_number":"123","project_id":"ecu-lab","storage_bucket":"ecu-lab.appspot.com"},"client":[{"client_info":{"mobilesdk_app_id":"1:123:android:abc","android_client_info":{"package_name":"com.anonymous.EcuLab"}},"oauth_client":[],"api_key":[{"current_key":"dummy"}],"services":{"appinvite_service":{"other_platform_oauth_client":[]}}}],"configuration_version":"1"}' > app/google-services.json
+          echo '{"project_info":{"project_number":"123","project_id":"ecu-lab","storage_bucket":"ecu-lab.appspot.com"},"client":[{"client_info":{"mobilesdk_app_id":"1:123:android:abc","android_client_info":{"package_name":"com.eculab"}},"oauth_client":[],"api_key":[{"current_key":"dummy"}],"services":{"appinvite_service":{"other_platform_oauth_client":[]}}}],"configuration_version":"1"}' > google-services.json
+          # If google-services still fails, disable it
+          echo "Before fix:"
+          cat app/build.gradle | grep -n "google" || true
+          # Try to make build work even without valid google file
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
           yes | sdkmanager --licenses || true
       - name: Build Debug APK
         run: gradle assembleDebug --stacktrace
       - name: Upload APK
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ECU-LAB-APK
