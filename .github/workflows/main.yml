@@ -17,11 +17,44 @@ jobs:
           keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Debug, OU=Debug, O=Debug, L=Debug, S=Debug, C=US" || true
           mkdir -p app
           cp debug.keystore app/debug.keystore || true
-          # THIS IS THE FIX - Exact package name com.anonymous.EcuLab
-          echo '{"project_info":{"project_number":"123456","project_id":"ecu-lab-test","storage_bucket":"ecu-lab-test.appspot.com"},"client":[{"client_info":{"mobilesdk_app_id":"1:123456:android:abcdef","android_client_info":{"package_name":"com.anonymous.EcuLab"}},"oauth_client":[],"api_key":[{"current_key":"AIzaSyDummyKey1234567890"}],"services":{"appinvite_service":{"other_platform_oauth_client":[]}}}],"configuration_version":"1"}' > app/google-services.json
-          echo "Created google-services.json for com.anonymous.EcuLab:"
-          cat app/google-services.json
           echo "sdk.dir=$ANDROID_HOME" > local.properties
+          cat > app/google-services.json <<'JSON'
+          {
+            "project_info": {
+              "project_number": "123456789",
+              "project_id": "ecu-lab",
+              "storage_bucket": "ecu-lab.appspot.com"
+            },
+            "client": [
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:123456789:android:aaaaaa",
+                  "android_client_info": {
+                    "package_name": "com.anonymous.EcuLab"
+                  }
+                },
+                "oauth_client": [],
+                "api_key": [{"current_key": "AIzaSyDummy1234567890"}],
+                "services": {"appinvite_service": {"other_platform_oauth_client": []}}
+              },
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:123456789:android:bbbbbb",
+                  "android_client_info": {
+                    "package_name": "com.anonymous.EcuLab.debug"
+                  }
+                },
+                "oauth_client": [],
+                "api_key": [{"current_key": "AIzaSyDummy1234567890"}],
+                "services": {"appinvite_service": {"other_platform_oauth_client": []}}
+              }
+            ],
+            "configuration_version": "1"
+          }
+          JSON
+          cat app/google-services.json
+          cp app/google-services.json google-services.json || true
+          ls -lh app/google-services.json
           yes | sdkmanager --licenses || true
       - name: Build APK
         run: gradle assembleDebug --stacktrace -Dorg.gradle.configuration-cache=false
