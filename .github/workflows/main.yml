@@ -8,7 +8,12 @@ on:
 
 jobs:
   build:
+    name: Build Debug APK
     runs-on: ubuntu-latest
+
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
 
     steps:
       - name: Checkout source
@@ -21,21 +26,51 @@ jobs:
           java-version: '17'
           cache: gradle
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Check Android SDK
+        shell: bash
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+
+          if [ ! -d "$ANDROID_HOME" ]; then
+            echo "Android SDK not found"
+            exit 1
+          fi
+
+          echo "Android SDK found"
+
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --version || true
+
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+
+          yes | "$SDKMANAGER" --licenses || true
+
+          "$SDKMANAGER" \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
 
       - name: Make Gradle executable
-        run: chmod +x gradlew
+        run: chmod +x ./gradlew
 
-      - name: Clean project
-        run: ./gradlew clean
+      - name: Clean Gradle
+        run: ./gradlew clean --no-daemon
 
       - name: Build Debug APK
         run: ./gradlew assembleDebug --stacktrace --no-daemon
 
+      - name: Find APK
+        shell: bash
+        run: |
+          echo "Searching for APK..."
+          find . -type f -name "*.apk" -print
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: AK-ECU-Signal-Lab-debug
-          path: |
-            */build/outputs/apk/debug/.apk
+          name: AK-ECU-SIGNAL-LAB-debug
+          path: "*/build/outputs/apk/debug/.apk"
+          if-no-files-found: error
