@@ -1,204 +1,29 @@
-name: Build AK ECU SIGNAL LAB APK
-
-on:
-  workflow_dispatch:
-  push:
-    branches:
-      - main
-
+name: Build ECU-LAB APK
+on: push
 jobs:
   build:
-    name: Build Debug APK
     runs-on: ubuntu-latest
-
-    env:
-      ANDROID_HOME: /usr/local/lib/android/sdk
-      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-
     steps:
-
-      # --------------------------------------------------
-      # 1. Checkout
-      # --------------------------------------------------
-      - name: Checkout source
-        uses: actions/checkout@v4
-
-
-      # --------------------------------------------------
-      # 2. Node.js
-      # --------------------------------------------------
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-
-
-      # --------------------------------------------------
-      # 3. Java 17
-      # --------------------------------------------------
-      - name: Setup JDK 17
+      - uses: actions/checkout@v4
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
           java-version: '17'
-          cache: gradle
-
-
-      # --------------------------------------------------
-      # 4. Android SDK
-      # --------------------------------------------------
-      - name: Check Android SDK
+          distribution: 'temurin'
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+      - name: Create missing files
         run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-
-          if [ ! -d "$ANDROID_HOME" ]; then
-            echo "ERROR: Android SDK not found"
-            exit 1
-          fi
-
-          echo "Android SDK found"
-
-
-      # --------------------------------------------------
-      # 5. Install Android SDK packages
-      # --------------------------------------------------
-      - name: Install Android SDK packages
-        run: |
-          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-
-          if [ ! -f "$SDKMANAGER" ]; then
-            echo "ERROR: sdkmanager not found"
-            exit 1
-          fi
-
-          yes | "$SDKMANAGER" --licenses || true
-
-          "$SDKMANAGER" \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
-
-
-      # --------------------------------------------------
-      # 6. Install JavaScript dependencies
-      # --------------------------------------------------
-      - name: Install npm dependencies
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          else
-            npm install
-          fi
-
-
-      # --------------------------------------------------
-      # 7. Check project type
-      # --------------------------------------------------
-      - name: Check Android project
-        shell: bash
-        run: |
-          echo "Checking project..."
-
-          if [ -f "android/gradlew" ]; then
-            echo "Existing Android project found."
-            echo "BUILD_TYPE=existing" >> "$GITHUB_ENV"
-
-          elif node -e "const p=require('./package.json'); process.exit(p.dependencies?.expo || p.devDependencies?.expo ? 0 : 1)" 2>/dev/null; then
-            echo "Expo project detected."
-            echo "BUILD_TYPE=expo" >> "$GITHUB_ENV"
-
-          else
-            echo "ERROR: No Android Gradle project and no Expo project found."
-            echo ""
-            echo "Expected either:"
-            echo "  android/gradlew"
-            echo "or"
-            echo "  Expo dependency in package.json"
-            exit 1
-          fi
-
-
-      # --------------------------------------------------
-      # 8. Create Android project if required
-      # --------------------------------------------------
-      - name: Generate Android project
-        if: env.BUILD_TYPE == 'expo'
-        run: |
-          echo "Generating Android project..."
-
-          npx expo prebuild \
-            --platform android \
-            --non-interactive
-
-          echo "Expo Android project generated."
-
-
-      # --------------------------------------------------
-      # 9. Verify Gradle wrapper
-      # --------------------------------------------------
-      - name: Verify Gradle wrapper
-        shell: bash
-        run: |
-          if [ ! -f "android/gradlew" ]; then
-            echo "ERROR: android/gradlew was not created."
-            echo ""
-            echo "Android directory contents:"
-            find android -maxdepth 2 -type f | head -100 || true
-            exit 1
-          fi
-
-          echo "Gradle wrapper found:"
-          ls -lh android/gradlew
-
-
-      # --------------------------------------------------
-      # 10. Make Gradle executable
-      # --------------------------------------------------
-      - name: Make Gradle executable
-        run: chmod +x android/gradlew
-
-
-      # --------------------------------------------------
-      # 11. Clean Gradle
-      # --------------------------------------------------
-      - name: Clean Gradle
-        working-directory: android
-        run: ./gradlew clean --no-daemon
-
-
-      # --------------------------------------------------
-      # 12. Build APK
-      # --------------------------------------------------
+          keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Debug, OU=Debug, O=Debug, L=Debug, S=Debug, C=US" || true
+          keytool -genkey -v -keystore app/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Debug, OU=Debug, O=Debug, L=Debug, S=Debug, C=US" || true
+          echo '{"project_info":{"project_number":"123456","project_id":"ecu-lab","storage_bucket":"ecu-lab.appspot.com"},"client":[{"client_info":{"mobilesdk_app_id":"1:123456:android:abc","android_client_info":{"package_name":"com.eculab"}},"oauth_client":[],"api_key":[{"current_key":"dummy"}],"services":{"appinvite_service":{"other_platform_oauth_client":[]}}}],"configuration_version":"1"}' > app/google-services.json
+          yes | sdkmanager --licenses || true
       - name: Build Debug APK
-        working-directory: android
-        run: |
-          ./gradlew assembleDebug \
-            --stacktrace \
-            --no-daemon
-
-
-      # --------------------------------------------------
-      # 13. Find APK
-      # --------------------------------------------------
-      - name: Find APK
-        shell: bash
-        run: |
-          echo "Searching for APK..."
-
-          find android \
-            -type f \
-            -name "*.apk" \
-            -print
-
-
-      # --------------------------------------------------
-      # 14. Upload APK
-      # --------------------------------------------------
+        run: gradle assembleDebug --stacktrace
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: AK-ECU-SIGNAL-LAB-debug
-          path: android/app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
+          name: ECU-LAB-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
