@@ -1,0 +1,6 @@
+{
+  "name": "ECU LAB",
+  "description": "Multi-vehicle ECU signal stimulator and test bench controller for Arduino Uno and HC-05 Bluetooth.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
