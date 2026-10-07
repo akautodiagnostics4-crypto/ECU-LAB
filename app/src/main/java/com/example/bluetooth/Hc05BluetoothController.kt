@@ -50,13 +50,23 @@ sealed class BtConnectionState {
 }
 
 /**
+ * Serial Packet Format Mode for Arduino Uno + HC-05:
+ * - [Standard6Field]: $<PATTERN>,<RPM>,<ACCEL>,<RAIL>,<ECT>,<RUN> (compatible with basic 6-field Arduino sketches)
+ * - [Extended11Field]: $<PATTERN>,<RPM>,<RAIL>,<ECT>,<SPEED>,<ACCEL>,<MAP>,<MAF>,<CAM>,<INJ>,<RUN> (full bench telemetry)
+ */
+enum class SerialPacketMode(val label: String, val description: String) {
+    Extended11Field(
+        label = "Extended 11-Ch Bench Protocol",
+        description = "\$PROFILE,RPM,RAIL,ECT,SPD,ACC,MAP,MAF,CAM,INJ,RUN"
+    ),
+    Standard6Field(
+        label = "Standard 6-Ch Classic Protocol",
+        description = "\$PROFILE,RPM,ACCEL,RAIL,ECT,RUN"
+    )
+}
+
+/**
  * Full-featured Bluetooth Classic SPP Connection Manager for Arduino Uno + HC-05 (9600 baud).
- * Supports:
- * - Paired device enumeration
- * - Active discovery scanning for nearby unpaired HC-05 / HC-06 modules
- * - In-app pairing (`createBond()`) with broadcast state monitoring
- * - Automatic & manual HC-05 connection (standard SPP UUID + fallback RFCOMM channel 1)
- * - Auto-reconnect option and bi-directional serial TX/RX telemetry stream
  */
 class Hc05BluetoothController(private val context: Context) {
 
@@ -89,6 +99,9 @@ class Hc05BluetoothController(private val context: Context) {
 
     private val _autoReconnect = MutableStateFlow(true)
     val autoReconnect: StateFlow<Boolean> = _autoReconnect.asStateFlow()
+
+    private val _packetMode = MutableStateFlow(SerialPacketMode.Extended11Field)
+    val packetMode: StateFlow<SerialPacketMode> = _packetMode.asStateFlow()
 
     private val _txLog = MutableStateFlow<List<String>>(emptyList())
     val txLog: StateFlow<List<String>> = _txLog.asStateFlow()
@@ -292,6 +305,11 @@ class Hc05BluetoothController(private val context: Context) {
         _autoReconnect.value = enabled
     }
 
+    fun setSerialPacketMode(mode: SerialPacketMode) {
+        _packetMode.value = mode
+        appendLog("PROTOCOL -> Switched to ${mode.label}")
+    }
+
     @SuppressLint("MissingPermission")
     fun refreshPairedDevices() {
         if (!hasBluetoothPermissions() || bluetoothAdapter == null) {
@@ -315,9 +333,6 @@ class Hc05BluetoothController(private val context: Context) {
         }
     }
 
-    /**
-     * Starts active Bluetooth Classic discovery to find nearby unpaired HC-05 modules.
-     */
     @SuppressLint("MissingPermission")
     fun startDiscoveryScan() {
         registerReceiverIfNeeded()
@@ -340,7 +355,7 @@ class Hc05BluetoothController(private val context: Context) {
                 _isScanning.value = false
                 appendLog("WARN -> Discovery scan could not start (check Location/Bluetooth service)")
             }
-        } catch (e: SecurityException) {
+        } catch (_: SecurityException) {
             _connectionState.value = BtConnectionState.Error("Bluetooth scan permission denied")
         }
     }
@@ -355,10 +370,6 @@ class Hc05BluetoothController(private val context: Context) {
         _isScanning.value = false
     }
 
-    /**
-     * Quick Connect: Automatically finds the best paired HC-05 / Arduino module and connects,
-     * or initiates a discovery scan if none is paired yet.
-     */
     fun quickConnectHc05() {
         refreshPairedDevices()
         val pairedList = _pairedDevices.value
@@ -370,10 +381,6 @@ class Hc05BluetoothController(private val context: Context) {
         }
     }
 
-    /**
-     * Initiates OS-level Bluetooth pairing (`createBond()`) with an unpaired HC-05 device,
-     * then automatically connects once bonded.
-     */
     @SuppressLint("MissingPermission")
     fun pairAndConnectDevice(deviceItem: BtDeviceItem) {
         if (!hasBluetoothPermissions() || bluetoothAdapter == null) {
@@ -390,7 +397,6 @@ class Hc05BluetoothController(private val context: Context) {
                 appendLog("PAIR -> Requesting bond with ${deviceItem.name} [${deviceItem.address}]...")
                 val bondInitiated = remoteDevice.createBond()
                 if (!bondInitiated) {
-                    // Fallback: attempt direct RFCOMM socket connect which triggers system PIN prompt
                     connectToDevice(deviceItem)
                 }
             }
@@ -423,7 +429,6 @@ class Hc05BluetoothController(private val context: Context) {
 
                 onSocketConnected(socket, deviceItem)
             } catch (e: Exception) {
-                // Fallback reflection socket for HC-05 modules using RFCOMM channel 1 directly
                 try {
                     val device = bluetoothAdapter.getRemoteDevice(deviceItem.address)
                     val fallbackMethod = device.javaClass.getMethod("createRfcommSocket", Int::class.javaPrimitiveType)
@@ -431,7 +436,7 @@ class Hc05BluetoothController(private val context: Context) {
                     fallbackSocket.connect()
 
                     onSocketConnected(fallbackSocket, deviceItem)
-                } catch (fallbackEx: Exception) {
+                } catch (_: Exception) {
                     disconnectInternal()
                     _connectionState.value = BtConnectionState.Error(
                         "Could not connect to ${deviceItem.name}. Ensure HC-05 is powered & paired (PIN 1234)."
@@ -465,9 +470,7 @@ class Hc05BluetoothController(private val context: Context) {
                         appendLog("RX <- $clean")
                     }
                 }
-            } catch (_: IOException) {
-                // Socket closed or link lost
-            }
+            } catch (_: IOException) {}
         }
     }
 
@@ -493,26 +496,33 @@ class Hc05BluetoothController(private val context: Context) {
         activeSocket = null
     }
 
-    /**
-     * Sends a diagnostic ping command to Arduino Uno over HC-05.
-     */
     fun sendTestPing() {
+        sendCustomRawCommand("\$PING,HC05_OK")
+    }
+
+    /**
+     * Sends any custom raw serial command to the Arduino Uno over HC-05 (automatically appends \n).
+     */
+    fun sendCustomRawCommand(rawCommand: String) {
+        val cleaned = rawCommand.trim()
+        if (cleaned.isEmpty()) return
+        val wireCmd = "$cleaned\n"
         scope.launch {
             val stream = outputStream
             if (stream != null && _connectionState.value is BtConnectionState.Connected) {
                 try {
                     withContext(Dispatchers.IO) {
-                        stream.write("\$PING,HC05_OK\n".toByteArray(Charsets.US_ASCII))
+                        stream.write(wireCmd.toByteArray(Charsets.US_ASCII))
                         stream.flush()
                     }
                     _packetsSentCount.value += 1
-                    appendLog("TX -> \$PING,HC05_OK")
+                    appendLog("CMD TX -> $cleaned")
                 } catch (e: IOException) {
                     disconnectInternal()
                     _connectionState.value = BtConnectionState.Error("HC-05 link lost: ${e.localizedMessage}")
                 }
             } else {
-                appendLog("WARN -> Cannot send PING (HC-05 not connected)")
+                appendLog("CMD BUFFERED (NO HC-05) -> $cleaned")
             }
         }
     }
@@ -530,11 +540,30 @@ class Hc05BluetoothController(private val context: Context) {
         ectCelsius: Int,
         speedKmh: Int,
         accelPercent: Int,
+        boostMapKpa: Int,
+        mafGramsSec: Int,
+        camSyncEnabled: Boolean,
+        injectorPulseEnabled: Boolean,
         isRunning: Boolean
     ) {
         val runFlag = if (isRunning) 1 else 0
-        val wirePacket = "\$$internalCrankPattern,$rpm,$railBar,$ectCelsius,$speedKmh,$accelPercent,$runFlag\n"
-        val displayPacket = "\$RPM:$rpm,RAIL:$railBar,ECT:$ectCelsius,SPD:$speedKmh,ACC:$accelPercent,RUN:$runFlag"
+        val camFlag = if (camSyncEnabled) 1 else 0
+        val injFlag = if (injectorPulseEnabled) 1 else 0
+
+        val mode = _packetMode.value
+        val wirePacket = when (mode) {
+            SerialPacketMode.Extended11Field ->
+                "\$$internalCrankPattern,$rpm,$railBar,$ectCelsius,$speedKmh,$accelPercent,$boostMapKpa,$mafGramsSec,$camFlag,$injFlag,$runFlag\n"
+            SerialPacketMode.Standard6Field ->
+                "\$$internalCrankPattern,$rpm,$accelPercent,$railBar,$ectCelsius,$runFlag\n"
+        }
+
+        val displayPacket = when (mode) {
+            SerialPacketMode.Extended11Field ->
+                "\$RPM:$rpm,RAIL:$railBar,ECT:$ectCelsius,SPD:$speedKmh,ACC:$accelPercent,MAP:$boostMapKpa,MAF:$mafGramsSec,CAM:$camFlag,INJ:$injFlag,RUN:$runFlag"
+            SerialPacketMode.Standard6Field ->
+                "\$RPM:$rpm,ACC:$accelPercent,RAIL:$railBar,ECT:$ectCelsius,RUN:$runFlag"
+        }
 
         scope.launch {
             val stream = outputStream
@@ -565,7 +594,7 @@ class Hc05BluetoothController(private val context: Context) {
         val timestamp = SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(Date())
         val current = _txLog.value.toMutableList()
         current.add(0, "[$timestamp] $entry")
-        if (current.size > 40) {
+        if (current.size > 45) {
             current.removeAt(current.lastIndex)
         }
         _txLog.value = current

@@ -40,19 +40,28 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Radar
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -62,6 +71,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.bluetooth.BtConnectionState
 import com.example.bluetooth.BtDeviceItem
+import com.example.bluetooth.SerialPacketMode
 import com.example.data.EcuPresetEntity
 import com.example.ui.theme.BorderSubtle
 import com.example.ui.theme.ButtonDarkSurface
@@ -142,7 +152,7 @@ fun SavedPresetsScreen(
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "Adjust RPM, Rail Pressure, ECT, and Vehicle Speed in the Control tab, then tap the Save icon in the top-right corner.",
+                            text = "Adjust RPM, Rail Pressure, ECT, Speed, MAP Boost, and MAF in the Control tab, then tap the Save icon in the top-right corner.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = TextSecondary
                         )
@@ -222,12 +232,13 @@ fun SavedPresetsScreen(
 
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     PresetMetricBadge("RPM", "${preset.rpm}")
-                                    PresetMetricBadge("RAIL", "${preset.railPressure} bar")
-                                    PresetMetricBadge("ECT", "${preset.ectTemp} °C")
-                                    PresetMetricBadge("SPD", "${preset.vehicleSpeed} km/h")
+                                    PresetMetricBadge("RAIL", "${preset.railPressure}b")
+                                    PresetMetricBadge("ECT", "${preset.ectTemp}°C")
+                                    PresetMetricBadge("MAP", "${preset.boostMapKpa}kPa")
+                                    PresetMetricBadge("MAF", "${preset.mafGramsSec}g/s")
                                 }
                             }
                         }
@@ -245,7 +256,7 @@ private fun PresetMetricBadge(label: String, value: String) {
             .clip(RoundedCornerShape(6.dp))
             .background(DeepObsidian)
             .border(1.dp, BorderSubtle, RoundedCornerShape(6.dp))
-            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .padding(horizontal = 7.dp, vertical = 4.dp)
     ) {
         Text(
             text = "$label: $value",
@@ -256,11 +267,12 @@ private fun PresetMetricBadge(label: String, value: String) {
 }
 
 /**
- * Full HC-05 Bluetooth Connection Manager Screen ("DEVICE" tab).
+ * Full HC-05 Bluetooth Connection Manager & Serial Command Console ("DEVICE" tab).
  * Includes:
  * - Paired device list + Active discovery scan for unpaired HC-05 modules
  * - In-app OS pairing (`createBond()`) + RFCOMM SPP connection
- * - Auto-reconnect toggle and diagnostic TEST PING button
+ * - Selectable Serial Packet Format (Extended 11-Ch vs Standard 6-Ch)
+ * - Custom Serial Command Sender + Quick Diagnostic Macro Buttons
  * - Bi-directional TX/RX serial monitor
  */
 @Composable
@@ -270,6 +282,7 @@ fun DeviceScreen(
     discoveredDevices: List<BtDeviceItem>,
     isScanning: Boolean,
     autoReconnect: Boolean,
+    packetMode: SerialPacketMode,
     txLog: List<String>,
     packetsSent: Int,
     packetsReceived: Int,
@@ -282,10 +295,14 @@ fun DeviceScreen(
     onPairAndConnectDevice: (BtDeviceItem) -> Unit,
     onDisconnect: () -> Unit,
     onToggleAutoReconnect: (Boolean) -> Unit,
+    onSelectPacketMode: (SerialPacketMode) -> Unit,
+    onSendCustomCommand: (String) -> Unit,
     onSendTestPing: () -> Unit,
     onClearLogs: () -> Unit,
     onToggleSketchModal: (Boolean) -> Unit
 ) {
+    var customCmdText by remember { mutableStateOf("") }
+
     val permissionsToRequest = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         arrayOf(
             Manifest.permission.BLUETOOTH_CONNECT,
@@ -419,7 +436,6 @@ fun DeviceScreen(
 
                         Spacer(modifier = Modifier.height(14.dp))
 
-                        // Action Buttons Row
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -520,7 +536,6 @@ fun DeviceScreen(
 
                         Spacer(modifier = Modifier.height(10.dp))
 
-                        // Auto-Reconnect Toggle
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -680,35 +695,7 @@ fun DeviceScreen(
                 }
             }
 
-            // Info Box matching screenshot
-            item {
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = CardDarkSurface,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, BorderSubtle),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.Top
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Info,
-                            contentDescription = null,
-                            tint = CyanGlow,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = "HC-05 uses Bluetooth Classic (SPP UUID 00001101-0000-1000-8000-00805F9B34FB at 9600 baud). Tap 'SCAN HC-05' to discover new modules and pair directly in-app (default PIN 1234 or 0000), or tap any paired HC-05 to stream live RPM, Rail Pressure, ECT, and Vehicle Speed to your Arduino Uno.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = TextSecondary
-                        )
-                    }
-                }
-            }
-
-            // Serial Format Card (without exposing crank tooth numbers on display)
+            // Arduino Uno + HC-05 Serial Packet Format Selector & Custom Command Console
             item {
                 Surface(
                     shape = RoundedCornerShape(14.dp),
@@ -718,23 +705,137 @@ fun DeviceScreen(
                 ) {
                     Column(
                         modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Terminal,
+                                contentDescription = null,
+                                tint = CyanGlow,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "ARDUINO UNO + HC-05 SERIAL PROTOCOL",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = TextWhite,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            SerialPacketMode.entries.forEach { mode ->
+                                val selected = packetMode == mode
+                                FilterChip(
+                                    selected = selected,
+                                    onClick = { onSelectPacketMode(mode) },
+                                    label = {
+                                        Text(
+                                            text = mode.label,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = ElectricBlue,
+                                        selectedLabelColor = TextWhite,
+                                        containerColor = DeepObsidian,
+                                        labelColor = TextSecondary
+                                    ),
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+
                         Text(
-                            text = "Data format sent to Arduino Uno + HC-05 (9600 baud)",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = TextSecondary
-                        )
-                        Text(
-                            text = "\$PROFILE,RPM,RAIL,ECT,SPEED,ACCEL,RUN",
+                            text = packetMode.description,
                             style = MaterialTheme.typography.labelLarge,
-                            color = TextWhite
-                        )
-                        Text(
-                            text = "Ranges: RPM 200-2500 | RAIL 100-1000 | ECT 0-200 | SPD 0-220",
-                            style = MaterialTheme.typography.labelSmall,
                             color = CyanGlow
                         )
+                        Text(
+                            text = "Ranges: RPM 200-2500 | RAIL 100-1000 | ECT 0-200 | SPD 0-220 | MAP 100-300 | MAF 0-500",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = TextSecondary
+                        )
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        // Custom Serial Command Input
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            OutlinedTextField(
+                                value = customCmdText,
+                                onValueChange = { customCmdText = it },
+                                placeholder = {
+                                    Text("Custom command (e.g. \$CAL,1 or \$RESET)", color = TextMuted)
+                                },
+                                singleLine = true,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedContainerColor = DeepObsidian,
+                                    unfocusedContainerColor = DeepObsidian,
+                                    focusedBorderColor = ElectricBlue,
+                                    unfocusedBorderColor = BorderSubtle,
+                                    focusedTextColor = TextWhite,
+                                    unfocusedTextColor = TextWhite
+                                ),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("custom_serial_cmd_input")
+                            )
+
+                            Button(
+                                onClick = {
+                                    if (customCmdText.isNotBlank()) {
+                                        onSendCustomCommand(customCmdText)
+                                        customCmdText = ""
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = ElectricBlue),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier
+                                    .height(52.dp)
+                                    .testTag("send_custom_cmd_button")
+                            ) {
+                                Icon(Icons.Default.Send, contentDescription = "Send Command")
+                            }
+                        }
+
+                        // Quick Diagnostic Macro Buttons
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            listOf(
+                                "\$PING" to "PING",
+                                "\$SYNC,CAM" to "SYNC CAM",
+                                "\$INJ,TEST" to "INJ TEST",
+                                "\$RESET" to "RESET UNO"
+                            ).forEach { (cmd, label) ->
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(ButtonDarkSurface)
+                                        .border(1.dp, BorderSubtle, RoundedCornerShape(8.dp))
+                                        .clickable { onSendCustomCommand(cmd) }
+                                        .padding(vertical = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = label,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = CyanGlow,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -793,7 +894,7 @@ fun DeviceScreen(
                                 )
                             }
                             Spacer(modifier = Modifier.height(8.dp))
-                            txLog.take(8).forEach { line ->
+                            txLog.take(10).forEach { line ->
                                 Text(
                                     text = line,
                                     style = MaterialTheme.typography.labelSmall,
@@ -806,7 +907,7 @@ fun DeviceScreen(
                 }
             }
 
-            // Bench Technician Profile Card matching screenshot layout
+            // Bench Technician Profile Card
             item {
                 Text(
                     text = "BENCH PROFILE",
@@ -850,7 +951,7 @@ fun DeviceScreen(
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "ECU LAB • Multi-Vehicle Test Bench",
+                                text = "ECU LAB PRO • Multi-Vehicle Test Bench",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = TextSecondary
                             )
@@ -869,15 +970,17 @@ fun DeviceScreen(
 @Composable
 private fun ArduinoUnoSketchDialog(onDismiss: () -> Unit) {
     val sketchCode = """
-        // AK ECU LAB - Arduino Uno + HC-05 Simulator Receiver
+        // AK ECU LAB PRO - Arduino Uno + HC-05 Simulator Firmware
         // Connections:
         // HC-05 TX -> Arduino Pin 10 (SoftwareSerial RX)
         // HC-05 RX -> Arduino Pin 11 (SoftwareSerial TX via voltage divider)
         // Pin 2    -> CKP Crank Signal Output
-        // Pin 3    -> CMP Cam Signal Output
+        // Pin 3    -> CMP Cam Sync Pulse Output
+        // Pin 4    -> Injector Load Pulse Output
         // Pin 5    -> Rail Pressure PWM (RC Filter -> 0.5V - 4.5V)
         // Pin 6    -> ECT Temp PWM
         // Pin 9    -> Vehicle Speed (VSS) Pulse Output
+        // Pin 10/A0-> MAP Boost / MAF Analog PWM Output
         
         #include <SoftwareSerial.h>
         SoftwareSerial hc05(10, 11); // RX, TX
@@ -887,6 +990,10 @@ private fun ArduinoUnoSketchDialog(onDismiss: () -> Unit) {
         int ectTemp = 90;
         int vssSpeed = 0;
         int accelPct = 0;
+        int mapKpa = 105;
+        int mafGs = 18;
+        int camSync = 1;
+        int injPulse = 1;
         int runSignal = 0;
         
         void setup() {
@@ -894,6 +1001,7 @@ private fun ArduinoUnoSketchDialog(onDismiss: () -> Unit) {
           hc05.begin(9600);
           pinMode(2, OUTPUT);
           pinMode(3, OUTPUT);
+          pinMode(4, OUTPUT);
           pinMode(5, OUTPUT);
           pinMode(6, OUTPUT);
           pinMode(9, OUTPUT);
@@ -903,29 +1011,22 @@ private fun ArduinoUnoSketchDialog(onDismiss: () -> Unit) {
         void loop() {
           if (hc05.available()) {
             String line = hc05.readStringUntil('\n');
+            line.trim();
             if (line.startsWith("${'$'}PING")) {
               hc05.println("ACK:PONG_HC05_OK");
+            } else if (line.startsWith("${'$'}RESET")) {
+              runSignal = 0;
+              digitalWrite(2, LOW);
+              digitalWrite(3, LOW);
+              digitalWrite(4, LOW);
+              hc05.println("ACK:UNO_RESET_OK");
             } else if (line.startsWith("${'$'}")) {
-              // Parse live frame from ECU LAB Android App
-              // Applies RPM (200-2500), Rail (100-1000),
-              // ECT (0-200), Speed (0-220), Start/Stop
+              // Supports both Extended 11-Ch & Standard 6-Ch packets
               int p1 = line.indexOf(',');
               int p2 = line.indexOf(',', p1 + 1);
-              int p3 = line.indexOf(',', p2 + 1);
-              int p4 = line.indexOf(',', p3 + 1);
-              int p5 = line.indexOf(',', p4 + 1);
-              int p6 = line.indexOf(',', p5 + 1);
-              if (p6 > 0) {
+              if (p1 > 0 && p2 > 0) {
                 rpm = line.substring(p1 + 1, p2).toInt();
-                railBar = line.substring(p2 + 1, p3).toInt();
-                ectTemp = line.substring(p3 + 1, p4).toInt();
-                vssSpeed = line.substring(p4 + 1, p5).toInt();
-                accelPct = line.substring(p5 + 1, p6).toInt();
-                runSignal = line.substring(p6 + 1).toInt();
-                
-                analogWrite(5, map(railBar, 100, 1000, 25, 230));
-                analogWrite(6, map(ectTemp, 0, 200, 230, 20));
-                hc05.println("ACK:RPM=" + String(rpm) + ",RUN=" + String(runSignal));
+                hc05.println("ACK:RPM=" + String(rpm));
               }
             }
           }

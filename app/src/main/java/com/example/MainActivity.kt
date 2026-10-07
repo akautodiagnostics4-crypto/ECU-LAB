@@ -55,6 +55,7 @@ import com.example.ui.theme.DeepObsidian
 import com.example.ui.theme.ElectricBlue
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.theme.TextSecondary
+import com.example.viewmodel.AccentColorTheme
 import com.example.viewmodel.BootStage
 import com.example.viewmodel.EcuLabTab
 import com.example.viewmodel.EcuLabViewModel
@@ -81,6 +82,7 @@ fun EcuLabApp(
     val discoveredDevices by viewModel.discoveredDevices.collectAsStateWithLifecycle()
     val isBtScanning by viewModel.isBtScanning.collectAsStateWithLifecycle()
     val autoReconnect by viewModel.autoReconnect.collectAsStateWithLifecycle()
+    val packetMode by viewModel.packetMode.collectAsStateWithLifecycle()
     val txLog by viewModel.txLog.collectAsStateWithLifecycle()
     val packetsSent by viewModel.packetsSentCount.collectAsStateWithLifecycle()
     val packetsReceived by viewModel.packetsReceivedCount.collectAsStateWithLifecycle()
@@ -159,6 +161,16 @@ fun EcuLabApp(
                                         onEctChange = { viewModel.updateEctTemp(it) },
                                         onSpeedChange = { viewModel.updateVehicleSpeed(it) },
                                         onAccelChange = { viewModel.updateAccelerator(it) },
+                                        onBoostMapChange = { viewModel.updateBoostMap(it) },
+                                        onMafChange = { viewModel.updateMaf(it) },
+                                        onCamSyncToggle = { viewModel.toggleCamSync(it) },
+                                        onInjectorPulseToggle = { viewModel.toggleInjectorPulse(it) },
+                                        onApplyQuickMode = { viewModel.applyQuickBenchMode(it) },
+                                        onCycleAccentTheme = {
+                                            val all = AccentColorTheme.entries
+                                            val next = all[(all.indexOf(uiState.accentTheme) + 1) % all.size]
+                                            viewModel.setAccentTheme(next)
+                                        },
                                         onToggleStartStop = { viewModel.toggleSignalGeneration() },
                                         onSavePresetConfirm = { viewModel.saveCurrentPreset(it) },
                                         onDismissSaveDialog = { viewModel.dismissSavePresetDialog() }
@@ -191,6 +203,7 @@ fun EcuLabApp(
                                         discoveredDevices = discoveredDevices,
                                         isScanning = isBtScanning,
                                         autoReconnect = autoReconnect,
+                                        packetMode = packetMode,
                                         txLog = txLog,
                                         packetsSent = packetsSent,
                                         packetsReceived = packetsReceived,
@@ -203,6 +216,8 @@ fun EcuLabApp(
                                         onPairAndConnectDevice = { viewModel.pairAndConnectHc05(it) },
                                         onDisconnect = { viewModel.disconnectHc05() },
                                         onToggleAutoReconnect = { viewModel.setAutoReconnect(it) },
+                                        onSelectPacketMode = { viewModel.setSerialPacketMode(it) },
+                                        onSendCustomCommand = { viewModel.sendCustomSerialCommand(it) },
                                         onSendTestPing = { viewModel.sendTestPing() },
                                         onClearLogs = { viewModel.clearBtLogs() },
                                         onToggleSketchModal = { viewModel.setShowArduinoSketchModal(it) }
