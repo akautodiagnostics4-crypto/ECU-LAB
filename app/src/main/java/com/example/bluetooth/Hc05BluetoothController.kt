@@ -51,22 +51,34 @@ sealed class BtConnectionState {
 
 /**
  * Serial Packet Format Mode for Arduino Uno + HC-05:
- * - [Standard6Field]: $<PATTERN>,<RPM>,<ACCEL>,<RAIL>,<ECT>,<RUN> (compatible with basic 6-field Arduino sketches)
- * - [Extended11Field]: $<PATTERN>,<RPM>,<RAIL>,<ECT>,<SPEED>,<ACCEL>,<MAP>,<MAF>,<CAM>,<INJ>,<RUN> (full bench telemetry)
+ * - [KeyValueCommands]: Default! Sends discrete newline-terminated commands:
+ *   START\n, STOP\n, RPM=800\n, RAIL=450\n, ECT=80\n, SPEED=0\n, ACCEL=0\n, MAP=105\n, MAF=18\n, CAM=1\n, INJ=1\n
+ * - [Extended11Field]: $<PATTERN>,<RPM>,<RAIL>,<ECT>,<SPEED>,<ACCEL>,<MAP>,<MAF>,<CAM>,<INJ>,<RUN>\n
+ * - [Standard6Field]: $<PATTERN>,<RPM>,<ACCEL>,<RAIL>,<ECT>,<RUN>\n
  */
 enum class SerialPacketMode(val label: String, val description: String) {
+    KeyValueCommands(
+        label = "Key=Value Commands (Default)",
+        description = "START\\n | STOP\\n | RPM=800\\n | RAIL=450\\n | ECT=80\\n"
+    ),
     Extended11Field(
-        label = "Extended 11-Ch Bench Protocol",
+        label = "Extended 11-Ch CSV Frame",
         description = "\$PROFILE,RPM,RAIL,ECT,SPD,ACC,MAP,MAF,CAM,INJ,RUN"
     ),
     Standard6Field(
-        label = "Standard 6-Ch Classic Protocol",
+        label = "Standard 6-Ch CSV Frame",
         description = "\$PROFILE,RPM,ACCEL,RAIL,ECT,RUN"
     )
 }
 
 /**
  * Full-featured Bluetooth Classic SPP Connection Manager for Arduino Uno + HC-05 (9600 baud).
+ * Sends direct newline-terminated commands:
+ * - START button -> "START\n"
+ * - STOP button  -> "STOP\n"
+ * - RPM slider   -> "RPM=800\n"
+ * - Rail slider  -> "RAIL=450\n"
+ * - ECT slider   -> "ECT=80\n"
  */
 class Hc05BluetoothController(private val context: Context) {
 
@@ -100,7 +112,7 @@ class Hc05BluetoothController(private val context: Context) {
     private val _autoReconnect = MutableStateFlow(true)
     val autoReconnect: StateFlow<Boolean> = _autoReconnect.asStateFlow()
 
-    private val _packetMode = MutableStateFlow(SerialPacketMode.Extended11Field)
+    private val _packetMode = MutableStateFlow(SerialPacketMode.KeyValueCommands)
     val packetMode: StateFlow<SerialPacketMode> = _packetMode.asStateFlow()
 
     private val _txLog = MutableStateFlow<List<String>>(emptyList())
@@ -496,8 +508,62 @@ class Hc05BluetoothController(private val context: Context) {
         activeSocket = null
     }
 
+    /**
+     * Direct command senders requested by user:
+     * - START button -> Sends "START\n"
+     * - STOP button  -> Sends "STOP\n"
+     * - RPM slider   -> Sends "RPM=800\n"
+     * - Rail slider  -> Sends "RAIL=450\n"
+     * - ECT slider   -> Sends "ECT=80\n"
+     */
+    fun sendStartCommand() {
+        sendLineToHc05(wireLine = "START", displayLabel = "START\\n")
+    }
+
+    fun sendStopCommand() {
+        sendLineToHc05(wireLine = "STOP", displayLabel = "STOP\\n")
+    }
+
+    fun sendRpmCommand(rpm: Int) {
+        sendLineToHc05(wireLine = "RPM=$rpm", displayLabel = "RPM=$rpm\\n")
+    }
+
+    fun sendRailCommand(rail: Int) {
+        sendLineToHc05(wireLine = "RAIL=$rail", displayLabel = "RAIL=$rail\\n")
+    }
+
+    fun sendEctCommand(ect: Int) {
+        sendLineToHc05(wireLine = "ECT=$ect", displayLabel = "ECT=$ect\\n")
+    }
+
+    fun sendSpeedCommand(speed: Int) {
+        sendLineToHc05(wireLine = "SPEED=$speed", displayLabel = "SPEED=$speed\\n")
+    }
+
+    fun sendAccelCommand(accel: Int) {
+        sendLineToHc05(wireLine = "ACCEL=$accel", displayLabel = "ACCEL=$accel\\n")
+    }
+
+    fun sendMapCommand(mapKpa: Int) {
+        sendLineToHc05(wireLine = "MAP=$mapKpa", displayLabel = "MAP=$mapKpa\\n")
+    }
+
+    fun sendMafCommand(mafGs: Int) {
+        sendLineToHc05(wireLine = "MAF=$mafGs", displayLabel = "MAF=$mafGs\\n")
+    }
+
+    fun sendCamSyncCommand(enabled: Boolean) {
+        val v = if (enabled) 1 else 0
+        sendLineToHc05(wireLine = "CAM=$v", displayLabel = "CAM=$v\\n")
+    }
+
+    fun sendInjectorCommand(enabled: Boolean) {
+        val v = if (enabled) 1 else 0
+        sendLineToHc05(wireLine = "INJ=$v", displayLabel = "INJ=$v\\n")
+    }
+
     fun sendTestPing() {
-        sendCustomRawCommand("\$PING,HC05_OK")
+        sendLineToHc05(wireLine = "PING", displayLabel = "PING\\n")
     }
 
     /**
@@ -506,32 +572,36 @@ class Hc05BluetoothController(private val context: Context) {
     fun sendCustomRawCommand(rawCommand: String) {
         val cleaned = rawCommand.trim()
         if (cleaned.isEmpty()) return
-        val wireCmd = "$cleaned\n"
+        sendLineToHc05(wireLine = cleaned, displayLabel = "$cleaned\\n")
+    }
+
+    private fun sendLineToHc05(wireLine: String, displayLabel: String) {
+        val payload = "$wireLine\n"
         scope.launch {
             val stream = outputStream
             if (stream != null && _connectionState.value is BtConnectionState.Connected) {
                 try {
                     withContext(Dispatchers.IO) {
-                        stream.write(wireCmd.toByteArray(Charsets.US_ASCII))
+                        stream.write(payload.toByteArray(Charsets.US_ASCII))
                         stream.flush()
                     }
                     _packetsSentCount.value += 1
-                    appendLog("CMD TX -> $cleaned")
+                    appendLog("TX -> $displayLabel")
                 } catch (e: IOException) {
                     disconnectInternal()
                     _connectionState.value = BtConnectionState.Error("HC-05 link lost: ${e.localizedMessage}")
+                    appendLog("ERR -> Link lost during TX ($displayLabel)")
                 }
             } else {
-                appendLog("CMD BUFFERED (NO HC-05) -> $cleaned")
+                appendLog("BUFFERED (NO HC-05) -> $displayLabel")
             }
         }
     }
 
     /**
-     * Transmits live ECU parameters to Arduino Uno over HC-05 Bluetooth SPP (9600 baud).
-     * Note: While the raw crank pattern is sent inside the byte stream to Arduino Uno's timer
-     * interrupt generator, the UI log masks the tooth pattern per user instructions ("DONT SHOW
-     * THE CRANK TOOTH PATTERN ON THE DISPLAY").
+     * Transmits all parameters when loading a vehicle or preset, or when operating in CSV frame mode.
+     * In KeyValueCommands mode (the default), it sends:
+     * RPM=<val>\n, RAIL=<val>\n, ECT=<val>\n, SPEED=<val>\n, ACCEL=<val>\n, and START\n or STOP\n.
      */
     fun sendEcuFrame(
         internalCrankPattern: String,
@@ -546,16 +616,51 @@ class Hc05BluetoothController(private val context: Context) {
         injectorPulseEnabled: Boolean,
         isRunning: Boolean
     ) {
+        val mode = _packetMode.value
+        if (mode == SerialPacketMode.KeyValueCommands) {
+            // Send the discrete Key=Value lines + START/STOP state
+            val batchPayload = buildString {
+                append("RPM=$rpm\n")
+                append("RAIL=$railBar\n")
+                append("ECT=$ectCelsius\n")
+                append("SPEED=$speedKmh\n")
+                append("ACCEL=$accelPercent\n")
+                append("MAP=$boostMapKpa\n")
+                append("MAF=$mafGramsSec\n")
+                append(if (isRunning) "START\n" else "STOP\n")
+            }
+            val summaryLog = "RPM=$rpm\\n RAIL=$railBar\\n ECT=$ectCelsius\\n ${if (isRunning) "START\\n" else "STOP\\n"}"
+            scope.launch {
+                val stream = outputStream
+                if (stream != null && _connectionState.value is BtConnectionState.Connected) {
+                    try {
+                        withContext(Dispatchers.IO) {
+                            stream.write(batchPayload.toByteArray(Charsets.US_ASCII))
+                            stream.flush()
+                        }
+                        _packetsSentCount.value += 1
+                        appendLog("TX -> $summaryLog")
+                    } catch (e: IOException) {
+                        disconnectInternal()
+                        _connectionState.value = BtConnectionState.Error("HC-05 link lost: ${e.localizedMessage}")
+                    }
+                } else {
+                    appendLog("BUFFERED (NO HC-05) -> $summaryLog")
+                }
+            }
+            return
+        }
+
         val runFlag = if (isRunning) 1 else 0
         val camFlag = if (camSyncEnabled) 1 else 0
         val injFlag = if (injectorPulseEnabled) 1 else 0
 
-        val mode = _packetMode.value
         val wirePacket = when (mode) {
             SerialPacketMode.Extended11Field ->
                 "\$$internalCrankPattern,$rpm,$railBar,$ectCelsius,$speedKmh,$accelPercent,$boostMapKpa,$mafGramsSec,$camFlag,$injFlag,$runFlag\n"
             SerialPacketMode.Standard6Field ->
                 "\$$internalCrankPattern,$rpm,$accelPercent,$railBar,$ectCelsius,$runFlag\n"
+            SerialPacketMode.KeyValueCommands -> ""
         }
 
         val displayPacket = when (mode) {
@@ -563,27 +668,10 @@ class Hc05BluetoothController(private val context: Context) {
                 "\$RPM:$rpm,RAIL:$railBar,ECT:$ectCelsius,SPD:$speedKmh,ACC:$accelPercent,MAP:$boostMapKpa,MAF:$mafGramsSec,CAM:$camFlag,INJ:$injFlag,RUN:$runFlag"
             SerialPacketMode.Standard6Field ->
                 "\$RPM:$rpm,ACC:$accelPercent,RAIL:$railBar,ECT:$ectCelsius,RUN:$runFlag"
+            SerialPacketMode.KeyValueCommands -> ""
         }
 
-        scope.launch {
-            val stream = outputStream
-            if (stream != null && _connectionState.value is BtConnectionState.Connected) {
-                try {
-                    withContext(Dispatchers.IO) {
-                        stream.write(wirePacket.toByteArray(Charsets.US_ASCII))
-                        stream.flush()
-                    }
-                    _packetsSentCount.value += 1
-                    appendLog("TX -> $displayPacket")
-                } catch (e: IOException) {
-                    disconnectInternal()
-                    _connectionState.value = BtConnectionState.Error("HC-05 link lost: ${e.localizedMessage}")
-                    appendLog("ERR -> Link lost during TX")
-                }
-            } else {
-                appendLog("BUFFERED (NO HC-05) -> $displayPacket")
-            }
-        }
+        sendLineToHc05(wireLine = wirePacket.trimEnd('\n'), displayLabel = displayPacket)
     }
 
     fun clearLogs() {

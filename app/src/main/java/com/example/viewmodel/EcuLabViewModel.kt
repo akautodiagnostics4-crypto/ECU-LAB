@@ -193,9 +193,6 @@ class EcuLabViewModel(application: Application) : AndroidViewModel(application) 
         transmitCurrentFrame()
     }
 
-    /**
-     * Quick Bench Test Scenarios (Cranking, Idle, Cruise, Full Load, Overheat Test)
-     */
     fun applyQuickBenchMode(modeName: String) {
         val v = _uiState.value.selectedVehicle
         when (modeName) {
@@ -259,46 +256,95 @@ class EcuLabViewModel(application: Application) : AndroidViewModel(application) 
         _uiState.update { it.copy(searchQuery = query) }
     }
 
+    /**
+     * RPM slider -> Sends "RPM=800\n" to HC-05 (or full CSV frame if CSV mode is selected)
+     */
     fun updateRpm(newRpm: Int) {
         val clamped = newRpm.coerceIn(RPM_MIN, RPM_MAX)
         _uiState.update { it.copy(rpm = clamped) }
-        transmitCurrentFrame()
+        if (bluetoothController.packetMode.value == SerialPacketMode.KeyValueCommands) {
+            bluetoothController.sendRpmCommand(clamped)
+        } else {
+            transmitCurrentFrame()
+        }
     }
 
+    /**
+     * Rail Pressure slider -> Sends "RAIL=450\n" to HC-05
+     */
     fun updateRailPressure(newRail: Int) {
         val clamped = newRail.coerceIn(RAIL_MIN, RAIL_MAX)
         _uiState.update { it.copy(railPressure = clamped) }
-        transmitCurrentFrame()
+        if (bluetoothController.packetMode.value == SerialPacketMode.KeyValueCommands) {
+            bluetoothController.sendRailCommand(clamped)
+        } else {
+            transmitCurrentFrame()
+        }
     }
 
+    /**
+     * ECT slider -> Sends "ECT=80\n" to HC-05
+     */
     fun updateEctTemp(newEct: Int) {
         val clamped = newEct.coerceIn(ECT_MIN, ECT_MAX)
         _uiState.update { it.copy(ectTemp = clamped) }
-        transmitCurrentFrame()
+        if (bluetoothController.packetMode.value == SerialPacketMode.KeyValueCommands) {
+            bluetoothController.sendEctCommand(clamped)
+        } else {
+            transmitCurrentFrame()
+        }
     }
 
+    /**
+     * Vehicle Speed slider -> Sends "SPEED=<val>\n" to HC-05
+     */
     fun updateVehicleSpeed(newSpeed: Int) {
         val clamped = newSpeed.coerceIn(SPEED_MIN, SPEED_MAX)
         _uiState.update { it.copy(vehicleSpeed = clamped) }
-        transmitCurrentFrame()
+        if (bluetoothController.packetMode.value == SerialPacketMode.KeyValueCommands) {
+            bluetoothController.sendSpeedCommand(clamped)
+        } else {
+            transmitCurrentFrame()
+        }
     }
 
+    /**
+     * Accelerator slider -> Sends "ACCEL=<val>\n" to HC-05
+     */
     fun updateAccelerator(newAccel: Int) {
         val clamped = newAccel.coerceIn(ACCEL_MIN, ACCEL_MAX)
         _uiState.update { it.copy(accelerator = clamped) }
-        transmitCurrentFrame()
+        if (bluetoothController.packetMode.value == SerialPacketMode.KeyValueCommands) {
+            bluetoothController.sendAccelCommand(clamped)
+        } else {
+            transmitCurrentFrame()
+        }
     }
 
+    /**
+     * Boost MAP slider -> Sends "MAP=<val>\n" to HC-05
+     */
     fun updateBoostMap(newMapKpa: Int) {
         val clamped = newMapKpa.coerceIn(MAP_MIN, MAP_MAX)
         _uiState.update { it.copy(boostMapKpa = clamped) }
-        transmitCurrentFrame()
+        if (bluetoothController.packetMode.value == SerialPacketMode.KeyValueCommands) {
+            bluetoothController.sendMapCommand(clamped)
+        } else {
+            transmitCurrentFrame()
+        }
     }
 
+    /**
+     * MAF slider -> Sends "MAF=<val>\n" to HC-05
+     */
     fun updateMaf(newMaf: Int) {
         val clamped = newMaf.coerceIn(MAF_MIN, MAF_MAX)
         _uiState.update { it.copy(mafGramsSec = clamped) }
-        transmitCurrentFrame()
+        if (bluetoothController.packetMode.value == SerialPacketMode.KeyValueCommands) {
+            bluetoothController.sendMafCommand(clamped)
+        } else {
+            transmitCurrentFrame()
+        }
     }
 
     fun toggleCamSync(enabled: Boolean) {
@@ -308,7 +354,11 @@ class EcuLabViewModel(application: Application) : AndroidViewModel(application) 
                 statusBannerMessage = if (enabled) "CMP Camshaft Sync Pulse ENABLED" else "CMP Camshaft Sync Pulse DISABLED"
             )
         }
-        transmitCurrentFrame()
+        if (bluetoothController.packetMode.value == SerialPacketMode.KeyValueCommands) {
+            bluetoothController.sendCamSyncCommand(enabled)
+        } else {
+            transmitCurrentFrame()
+        }
     }
 
     fun toggleInjectorPulse(enabled: Boolean) {
@@ -318,18 +368,35 @@ class EcuLabViewModel(application: Application) : AndroidViewModel(application) 
                 statusBannerMessage = if (enabled) "Injector Load Pulse ENABLED" else "Injector Load Pulse DISABLED"
             )
         }
-        transmitCurrentFrame()
+        if (bluetoothController.packetMode.value == SerialPacketMode.KeyValueCommands) {
+            bluetoothController.sendInjectorCommand(enabled)
+        } else {
+            transmitCurrentFrame()
+        }
     }
 
+    /**
+     * START / STOP button:
+     * - When starting -> Sends "START\n" to HC-05
+     * - When stopping -> Sends "STOP\n" to HC-05
+     */
     fun toggleSignalGeneration() {
+        val nextRunning = !_uiState.value.isSignalRunning
         _uiState.update { state ->
-            val nextRunning = !state.isSignalRunning
             state.copy(
                 isSignalRunning = nextRunning,
-                statusBannerMessage = if (nextRunning) "ECU Signal Generation STARTED" else "ECU Signal Generation STOPPED"
+                statusBannerMessage = if (nextRunning) "Sent START\\n to HC-05" else "Sent STOP\\n to HC-05"
             )
         }
-        transmitCurrentFrame()
+        if (bluetoothController.packetMode.value == SerialPacketMode.KeyValueCommands) {
+            if (nextRunning) {
+                bluetoothController.sendStartCommand()
+            } else {
+                bluetoothController.sendStopCommand()
+            }
+        } else {
+            transmitCurrentFrame()
+        }
     }
 
     private fun transmitCurrentFrame() {
@@ -467,7 +534,6 @@ class EcuLabViewModel(application: Application) : AndroidViewModel(application) 
 
     fun sendTestPing() {
         bluetoothController.sendTestPing()
-        transmitCurrentFrame()
     }
 
     fun clearBtLogs() {

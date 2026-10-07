@@ -812,10 +812,11 @@ fun DeviceScreen(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             listOf(
-                                "\$PING" to "PING",
-                                "\$SYNC,CAM" to "SYNC CAM",
-                                "\$INJ,TEST" to "INJ TEST",
-                                "\$RESET" to "RESET UNO"
+                                "START" to "START\\n",
+                                "STOP" to "STOP\\n",
+                                "RPM=800" to "RPM=800\\n",
+                                "RAIL=450" to "RAIL=450\\n",
+                                "ECT=80" to "ECT=80\\n"
                             ).forEach { (cmd, label) ->
                                 Box(
                                     modifier = Modifier
@@ -1010,24 +1011,35 @@ private fun ArduinoUnoSketchDialog(onDismiss: () -> Unit) {
         
         void loop() {
           if (hc05.available()) {
-            String line = hc05.readStringUntil('\n');
-            line.trim();
-            if (line.startsWith("${'$'}PING")) {
-              hc05.println("ACK:PONG_HC05_OK");
-            } else if (line.startsWith("${'$'}RESET")) {
+            String cmd = hc05.readStringUntil('\n');
+            cmd.trim();
+            if (cmd == "START") {
+              runSignal = 1;
+              hc05.println("ACK:STARTED");
+            } else if (cmd == "STOP") {
               runSignal = 0;
               digitalWrite(2, LOW);
               digitalWrite(3, LOW);
-              digitalWrite(4, LOW);
-              hc05.println("ACK:UNO_RESET_OK");
-            } else if (line.startsWith("${'$'}")) {
-              // Supports both Extended 11-Ch & Standard 6-Ch packets
-              int p1 = line.indexOf(',');
-              int p2 = line.indexOf(',', p1 + 1);
-              if (p1 > 0 && p2 > 0) {
-                rpm = line.substring(p1 + 1, p2).toInt();
-                hc05.println("ACK:RPM=" + String(rpm));
-              }
+              hc05.println("ACK:STOPPED");
+            } else if (cmd.startsWith("RPM=")) {
+              rpm = cmd.substring(4).toInt();
+              hc05.println("ACK:RPM=" + String(rpm));
+            } else if (cmd.startsWith("RAIL=")) {
+              railBar = cmd.substring(5).toInt();
+              analogWrite(5, map(railBar, 100, 1000, 25, 230));
+              hc05.println("ACK:RAIL=" + String(railBar));
+            } else if (cmd.startsWith("ECT=")) {
+              ectTemp = cmd.substring(4).toInt();
+              analogWrite(6, map(ectTemp, 0, 200, 230, 20));
+              hc05.println("ACK:ECT=" + String(ectTemp));
+            } else if (cmd.startsWith("SPEED=")) {
+              vssSpeed = cmd.substring(6).toInt();
+            } else if (cmd.startsWith("ACCEL=")) {
+              accelPct = cmd.substring(6).toInt();
+            } else if (cmd.startsWith("MAP=")) {
+              mapKpa = cmd.substring(4).toInt();
+            } else if (cmd.startsWith("MAF=")) {
+              mafGs = cmd.substring(4).toInt();
             }
           }
         }
