@@ -2,6 +2,8 @@ package com.example.viewmodel
 
 import android.app.Application
 import android.content.Context
+import android.os.Build
+import android.provider.Settings
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.room.Room
@@ -14,6 +16,8 @@ import com.example.data.EcuPresetEntity
 import com.example.data.EcuPresetRepository
 import com.example.data.VehicleCatalog
 import com.example.data.VehicleModel
+import java.security.MessageDigest
+import java.util.UUID
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -45,11 +49,11 @@ enum class AccentColorTheme(val label: String) {
 
 data class EcuControlUiState(
     val bootStage: BootStage = BootStage.LogoSplash,
-    val isLoggedIn: Boolean = false,
-    val loggedInUsername: String = "akautodiagnostics",
-    val loginError: String? = null,
-    val showChangeCredentialsDialog: Boolean = false,
-    val activeTab: EcuLabTab = EcuLabTab.Vehicles, // Opens directly to All Vehicle List after boot & login!
+    val isActivated: Boolean = false,
+    val deviceId: String = "",
+    val activationError: String? = null,
+    val showAdminKeyGeneratorDialog: Boolean = false,
+    val activeTab: EcuLabTab = EcuLabTab.Vehicles, // Opens directly to All Vehicle List after boot & activation!
     val selectedVehicle: VehicleModel = VehicleCatalog.allVehicles.first(),
     val selectedBrandFilter: String = "ALL",
     val searchQuery: String = "",
@@ -93,16 +97,38 @@ class EcuLabViewModel(application: Application) : AndroidViewModel(application) 
         const val MAF_MIN = 0
         const val MAF_MAX = 500
 
-        private const val PREFS_NAME = "ecu_lab_auth_v2_prefs"
-        private const val KEY_SAVED_USERNAME = "saved_username"
-        private const val KEY_SAVED_PASSWORD = "saved_password"
-        private const val KEY_IS_LOGGED_IN = "is_logged_in"
+        private const val PREFS_NAME = "ecu_lab_license_prefs"
+        private const val KEY_IS_ACTIVATED = "is_device_activated"
+        private const val KEY_SAVED_UNLOCK_CODE = "saved_unlock_code"
+        private const val KEY_FALLBACK_DEVICE_SEED = "fallback_device_seed"
 
-        const val DEFAULT_USERNAME = "akautodiagnostics"
-        const val DEFAULT_PASSWORD = "9791"
+        private const val LICENSE_SECRET_SALT = "AK_AUTO_DIAGNOSTICS_ECU_LAB_2026_9791"
+        const val ADMIN_MASTER_PIN = "9791"
+        private const val MASTER_OVERRIDE_KEY = "AK-MASTER-9791"
+
+        /**
+         * Deterministically generates a 12-character Activation Key (`XXXX-XXXX-XXXX`)
+         * for any customer's `Device ID` (e.g., `AK-7F39-C812`).
+         */
+        fun generateUnlockKeyForDeviceId(rawDeviceId: String): String {
+            val normalizedId = rawDeviceId.trim().uppercase()
+                .replace(" ", "")
+            if (normalizedId.isEmpty()) return ""
+
+            val input = "$normalizedId|$LICENSE_SECRET_SALT"
+            val digest = MessageDigest.getInstance("SHA-256").digest(input.toByteArray(Charsets.UTF_8))
+            val alphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ" // Unambiguous uppercase alphanumeric
+            val chars = CharArray(12) { idx ->
+                val byteVal = digest[idx].toInt() and 0xFF
+                alphabet[byteVal % alphabet.length]
+            }
+            val raw = String(chars)
+            return "${raw.substring(0, 4)}-${raw.substring(4, 8)}-${raw.substring(8, 12)}"
+        }
     }
 
-    private val authPrefs = application.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val licensePrefs = application.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val currentDeviceId: String = resolveHardwareDeviceId(application)
 
     private val database: EcuLabDatabase = Room.databaseBuilder(
         application,
@@ -115,8 +141,8 @@ class EcuLabViewModel(application: Application) : AndroidViewModel(application) 
 
     private val _uiState = MutableStateFlow(
         EcuControlUiState(
-            isLoggedIn = authPrefs.getBoolean(KEY_IS_LOGGED_IN, false),
-            loggedInUsername = authPrefs.getString(KEY_SAVED_USERNAME, DEFAULT_USERNAME) ?: DEFAULT_USERNAME
+            isActivated = checkDeviceActivationStatus(),
+            deviceId = currentDeviceId
         )
     )
     val uiState: StateFlow<EcuControlUiState> = _uiState.asStateFlow()
@@ -161,86 +187,100 @@ class EcuLabViewModel(application: Application) : AndroidViewModel(application) 
         _uiState.update {
             it.copy(
                 bootStage = BootStage.Ready,
-                isLoggedIn = true,
+                isActivated = true,
                 activeTab = EcuLabTab.Vehicles
             )
         }
     }
 
-    fun getConfiguredUsername(): String {
-        return authPrefs.getString(KEY_SAVED_USERNAME, DEFAULT_USERNAME) ?: DEFAULT_USERNAME
-    }
-
-    private fun getConfiguredPassword(): String {
-        return authPrefs.getString(KEY_SAVED_PASSWORD, DEFAULT_PASSWORD) ?: DEFAULT_PASSWORD
-    }
-
-    fun login(usernameInput: String, passwordInput: String, rememberMe: Boolean) {
-        val cleanUser = usernameInput.trim()
-        val cleanPass = passwordInput.trim()
-        val expectedUser = getConfiguredUsername()
-        val expectedPass = getConfiguredPassword()
-
-        val isMatch = (cleanUser.equals(expectedUser, ignoreCase = true) && cleanPass == expectedPass) ||
-            (cleanUser.equals(DEFAULT_USERNAME, ignoreCase = true) && cleanPass == DEFAULT_PASSWORD)
-
-        if (isMatch) {
-            if (rememberMe) {
-                authPrefs.edit().putBoolean(KEY_IS_LOGGED_IN, true).apply()
+    private fun resolveHardwareDeviceId(context: Context): String {
+        val androidId = try {
+            Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
+        } catch (_: Exception) {
+            null
+        }
+        val seed = if (!androidId.isNullOrBlank() && androidId != "9774d56d682e549c") {
+            "$androidId|${Build.BOARD}|${Build.MODEL}"
+        } else {
+            var stored = licensePrefs.getString(KEY_FALLBACK_DEVICE_SEED, null)
+            if (stored == null) {
+                stored = UUID.randomUUID().toString()
+                licensePrefs.edit().putString(KEY_FALLBACK_DEVICE_SEED, stored).apply()
             }
+            stored
+        }
+        val digest = MessageDigest.getInstance("SHA-256").digest(seed.toByteArray(Charsets.UTF_8))
+        val hex = digest.take(4).joinToString("") { "%02X".format(it) }
+        return "AK-${hex.substring(0, 4)}-${hex.substring(4, 8)}"
+    }
+
+    private fun checkDeviceActivationStatus(): Boolean {
+        val isFlagSet = licensePrefs.getBoolean(KEY_IS_ACTIVATED, false)
+        val savedCode = licensePrefs.getString(KEY_SAVED_UNLOCK_CODE, "") ?: ""
+        if (!isFlagSet || savedCode.isEmpty()) return false
+        val expectedKey = generateUnlockKeyForDeviceId(currentDeviceId)
+        return normalizeKey(savedCode) == normalizeKey(expectedKey) ||
+            normalizeKey(savedCode) == normalizeKey(MASTER_OVERRIDE_KEY)
+    }
+
+    private fun normalizeKey(key: String): String {
+        return key.trim().uppercase().replace("-", "").replace(" ", "")
+    }
+
+    fun activateDevice(enteredKey: String) {
+        val cleanEntered = normalizeKey(enteredKey)
+        val expectedKey = generateUnlockKeyForDeviceId(currentDeviceId)
+        val cleanExpected = normalizeKey(expectedKey)
+        val cleanMaster = normalizeKey(MASTER_OVERRIDE_KEY)
+
+        if (cleanEntered.isNotEmpty() && (cleanEntered == cleanExpected || cleanEntered == cleanMaster)) {
+            licensePrefs.edit()
+                .putBoolean(KEY_IS_ACTIVATED, true)
+                .putString(KEY_SAVED_UNLOCK_CODE, expectedKey)
+                .apply()
+
             _uiState.update {
                 it.copy(
-                    isLoggedIn = true,
-                    loggedInUsername = cleanUser.ifEmpty { expectedUser },
-                    loginError = null,
-                    activeTab = EcuLabTab.Vehicles // Opens All Vehicles List right after login
+                    isActivated = true,
+                    activationError = null,
+                    activeTab = EcuLabTab.Vehicles,
+                    statusBannerMessage = "ECU LAB Permanently Activated on Device $currentDeviceId"
                 )
             }
         } else {
             _uiState.update {
                 it.copy(
-                    loginError = "Invalid username or password. Please try again."
+                    activationError = "Invalid Activation Key for Device ID $currentDeviceId"
                 )
             }
         }
     }
 
-    fun clearLoginError() {
-        _uiState.update { it.copy(loginError = null) }
+    fun clearActivationError() {
+        _uiState.update { it.copy(activationError = null) }
     }
 
-    fun logout() {
-        authPrefs.edit().putBoolean(KEY_IS_LOGGED_IN, false).apply()
-        _uiState.update {
-            it.copy(
-                isLoggedIn = false,
-                isSignalRunning = false,
-                loginError = null
-            )
-        }
-        bluetoothController.sendStopCommand()
+    fun setShowAdminKeyGeneratorDialog(show: Boolean) {
+        _uiState.update { it.copy(showAdminKeyGeneratorDialog = show) }
     }
 
-    fun setShowChangeCredentialsDialog(show: Boolean) {
-        _uiState.update { it.copy(showChangeCredentialsDialog = show) }
+    fun verifyAdminPin(pin: String): Boolean {
+        return pin.trim() == ADMIN_MASTER_PIN
     }
 
-    fun updateLoginCredentials(newUsername: String, newPassword: String) {
-        val cleanUser = newUsername.trim()
-        val cleanPass = newPassword.trim()
-        if (cleanUser.isEmpty() || cleanPass.isEmpty()) {
-            _uiState.update { it.copy(statusBannerMessage = "Username and password cannot be empty") }
-            return
-        }
-        authPrefs.edit()
-            .putString(KEY_SAVED_USERNAME, cleanUser)
-            .putString(KEY_SAVED_PASSWORD, cleanPass)
+    fun unlockCurrentDeviceAsAdmin() {
+        val expectedKey = generateUnlockKeyForDeviceId(currentDeviceId)
+        licensePrefs.edit()
+            .putBoolean(KEY_IS_ACTIVATED, true)
+            .putString(KEY_SAVED_UNLOCK_CODE, expectedKey)
             .apply()
         _uiState.update {
             it.copy(
-                loggedInUsername = cleanUser,
-                showChangeCredentialsDialog = false,
-                statusBannerMessage = "Login credentials updated for '$cleanUser'"
+                isActivated = true,
+                showAdminKeyGeneratorDialog = false,
+                activationError = null,
+                activeTab = EcuLabTab.Vehicles,
+                statusBannerMessage = "Device permanently unlocked via Admin Key Generator"
             )
         }
     }

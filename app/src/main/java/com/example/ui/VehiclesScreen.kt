@@ -30,6 +30,8 @@ import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Verified
+import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -77,6 +79,8 @@ fun VehiclesScreen(
     selectedVehicle: VehicleModel,
     selectedBrandFilter: String,
     searchQuery: String,
+    isProUnlocked: Boolean = false,
+    onOpenPaymentGateway: () -> Unit = {},
     onBrandFilterChange: (String) -> Unit,
     onSearchQueryChange: (String) -> Unit,
     onSelectVehicle: (VehicleModel) -> Unit
@@ -102,37 +106,75 @@ fun VehiclesScreen(
                 .fillMaxSize()
                 .widthIn(max = 600.dp)
         ) {
-            // Header with Logo + Title
+            // Header with Logo + Title + Pro Gateway Button
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Image(
-                    painter = painterResource(id = R.drawable.img_ak_ecu_logo_1791276792510),
-                    contentDescription = "ECU LAB Logo",
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Image(
+                        painter = painterResource(id = R.drawable.img_ak_ecu_logo_1791276792510),
+                        contentDescription = "ECU LAB Logo",
+                        modifier = Modifier
+                            .size(46.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .border(1.dp, ElectricBlue.copy(alpha = 0.5f), RoundedCornerShape(10.dp)),
+                        contentScale = ContentScale.Crop
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "ALL VEHICLES LIST",
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = TextWhite,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.6.sp,
+                            modifier = Modifier.testTag("all_vehicles_header")
+                        )
+                        Text(
+                            text = "Select vehicle to open real-time ECU signal generator",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextSecondary
+                        )
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(50),
+                    color = if (isProUnlocked) SignalGreenBg else ElectricBlue.copy(alpha = 0.2f),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (isProUnlocked) SignalGreen else CyanGlow
+                    ),
                     modifier = Modifier
-                        .size(46.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .border(1.dp, ElectricBlue.copy(alpha = 0.5f), RoundedCornerShape(10.dp)),
-                    contentScale = ContentScale.Crop
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column {
-                    Text(
-                        text = "ALL VEHICLES LIST",
-                        style = MaterialTheme.typography.headlineMedium,
-                        color = TextWhite,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.6.sp,
-                        modifier = Modifier.testTag("all_vehicles_header")
-                    )
-                    Text(
-                        text = "Select vehicle to open real-time ECU signal generator",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = TextSecondary
-                    )
+                        .clip(RoundedCornerShape(50))
+                        .clickable { onOpenPaymentGateway() }
+                        .testTag("open_pro_gateway_badge")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = if (isProUnlocked) Icons.Default.Verified else Icons.Default.WorkspacePremium,
+                            contentDescription = "Pro Plan",
+                            tint = if (isProUnlocked) SignalGreen else CyanGlow,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(5.dp))
+                        Text(
+                            text = if (isProUnlocked) "PRO ACTIVE" else "UPGRADE PRO",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isProUnlocked) SignalGreen else CyanGlow,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
 

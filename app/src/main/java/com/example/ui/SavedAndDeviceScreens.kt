@@ -27,6 +27,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.BluetoothConnected
 import androidx.compose.material.icons.filled.BluetoothDisabled
@@ -41,6 +42,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Radar
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SupportAgent
+import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -286,12 +288,8 @@ fun DeviceScreen(
     onSendCustomCommand: (String) -> Unit,
     onSendTestPing: () -> Unit,
     onClearLogs: () -> Unit,
-    loggedInUsername: String = "admin",
-    showChangeCredentialsDialog: Boolean = false,
-    onOpenChangeCredentials: () -> Unit = {},
-    onDismissChangeCredentials: () -> Unit = {},
-    onSaveNewCredentials: (String, String) -> Unit = { _, _ -> },
-    onLogout: () -> Unit = {}
+    deviceId: String = "",
+    onOpenAdminKeyGenerator: () -> Unit = {}
 ) {
     val context = LocalContext.current
 
@@ -710,11 +708,11 @@ fun DeviceScreen(
                 }
             }
 
-            // Account & Login Security Section (Change Username / Password & Log Out)
+            // Device License & Admin Key Generator Section
             item {
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "ACCOUNT & LOGIN SECURITY",
+                    text = "DEVICE LICENSE & ADMIN KEY GENERATOR",
                     style = MaterialTheme.typography.labelLarge,
                     color = CyanGlow,
                     letterSpacing = 1.5.sp
@@ -737,136 +735,58 @@ fun DeviceScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Column {
-                                Text(
-                                    text = "Signed in as: $loggedInUsername",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = TextWhite,
-                                    fontWeight = FontWeight.Bold
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.VerifiedUser,
+                                    contentDescription = null,
+                                    tint = SignalGreen,
+                                    modifier = Modifier.size(24.dp)
                                 )
-                                Text(
-                                    text = "Manage your app login username and password",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = TextSecondary
-                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        text = "Permanently Activated License",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = SignalGreen,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "Device ID: $deviceId",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = TextSecondary
+                                    )
+                                }
                             }
                         }
 
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            modifier = Modifier.fillMaxWidth()
+                        OutlinedButton(
+                            onClick = onOpenAdminKeyGenerator,
+                            shape = RoundedCornerShape(10.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, ElectricBlue),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .testTag("device_open_admin_keygen_button")
                         ) {
-                            OutlinedButton(
-                                onClick = onOpenChangeCredentials,
-                                shape = RoundedCornerShape(10.dp),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, ElectricBlue),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(48.dp)
-                                    .testTag("change_credentials_button")
-                            ) {
-                                Text(
-                                    text = "CHANGE PASSWORD",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = CyanGlow,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-
-                            Button(
-                                onClick = onLogout,
-                                shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = StopRed),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(48.dp)
-                                    .testTag("logout_button")
-                            ) {
-                                Text(
-                                    text = "LOG OUT",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = TextWhite,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
+                            Icon(
+                                imageVector = Icons.Default.AdminPanelSettings,
+                                contentDescription = null,
+                                tint = CyanGlow,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "ADMIN UNLOCK KEY GENERATOR",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = CyanGlow,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                 }
             }
         }
     }
-
-    if (showChangeCredentialsDialog) {
-        ChangeCredentialsDialog(
-            currentUsername = loggedInUsername,
-            onConfirm = onSaveNewCredentials,
-            onDismiss = onDismissChangeCredentials
-        )
-    }
-}
-
-@Composable
-private fun ChangeCredentialsDialog(
-    currentUsername: String,
-    onConfirm: (String, String) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var newUsername by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(currentUsername) }
-    var newPassword by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("") }
-
-    androidx.compose.material3.AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = CardDarkSurface,
-        titleContentColor = TextWhite,
-        textContentColor = TextSecondary,
-        title = {
-            Text(
-                text = "Set Login Username & Password",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
-            )
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    text = "Enter the new username and password required to log into ECU LAB.",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                androidx.compose.material3.OutlinedTextField(
-                    value = newUsername,
-                    onValueChange = { newUsername = it },
-                    label = { Text("New Username") },
-                    singleLine = true,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("new_username_input")
-                )
-                androidx.compose.material3.OutlinedTextField(
-                    value = newPassword,
-                    onValueChange = { newPassword = it },
-                    label = { Text("New Password") },
-                    singleLine = true,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("new_password_input")
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = { onConfirm(newUsername, newPassword) },
-                colors = ButtonDefaults.buttonColors(containerColor = ElectricBlue),
-                modifier = Modifier.testTag("save_new_credentials_button")
-            ) {
-                Text("SAVE")
-            }
-        },
-        dismissButton = {
-            androidx.compose.material3.TextButton(onClick = onDismiss) {
-                Text("CANCEL", color = TextSecondary)
-            }
-        }
-    )
 }
 
 @Composable
