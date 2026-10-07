@@ -712,7 +712,7 @@ private fun HardwarePulseTogglesCard(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = if (camSyncEnabled) "Pin 3 Active" else "Pin 3 Muted",
+                        text = if (camSyncEnabled) "Signal Active" else "Signal Muted",
                         style = MaterialTheme.typography.labelSmall,
                         color = if (camSyncEnabled) SignalGreen else TextMuted
                     )
@@ -813,12 +813,12 @@ private fun StatusPillsRow(
 
         val isBtConnected = btState is BtConnectionState.Connected
         val btLabel = when (btState) {
-            is BtConnectionState.Connected -> "HC-05 CONNECTED (${btState.deviceName})"
+            is BtConnectionState.Connected -> "BLUETOOTH CONNECTED (${btState.deviceName})"
             is BtConnectionState.Connecting -> "CONNECTING ${btState.deviceName}..."
             is BtConnectionState.Pairing -> "PAIRING ${btState.deviceName}..."
-            is BtConnectionState.Scanning -> "SCANNING HC-05 (${btState.foundCount})..."
-            is BtConnectionState.Error -> "HC-05 ERROR (TAP TO RETRY)"
-            BtConnectionState.Disconnected -> "HC-05 NOT CONNECTED"
+            is BtConnectionState.Scanning -> "SCANNING BLUETOOTH (${btState.foundCount})..."
+            is BtConnectionState.Error -> "BLUETOOTH ERROR (TAP TO RETRY)"
+            BtConnectionState.Disconnected -> "BLUETOOTH NOT CONNECTED"
         }
 
         Row(
@@ -837,7 +837,7 @@ private fun StatusPillsRow(
         ) {
             Icon(
                 imageVector = if (isBtConnected) Icons.Default.Bluetooth else Icons.Default.BluetoothDisabled,
-                contentDescription = "HC-05 Status",
+                contentDescription = "Bluetooth Status",
                 tint = if (isBtConnected) accentColor else TextSecondary,
                 modifier = Modifier.size(15.dp)
             )

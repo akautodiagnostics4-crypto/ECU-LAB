@@ -49,13 +49,6 @@ sealed class BtConnectionState {
     data class Error(val message: String) : BtConnectionState()
 }
 
-/**
- * Serial Packet Format Mode for Arduino Uno + HC-05:
- * - [KeyValueCommands]: Default! Sends discrete newline-terminated commands:
- *   START\n, STOP\n, RPM=800\n, RAIL=450\n, ECT=80\n, SPEED=0\n, ACCEL=0\n, MAP=105\n, MAF=18\n, CAM=1\n, INJ=1\n
- * - [Extended11Field]: $<PATTERN>,<RPM>,<RAIL>,<ECT>,<SPEED>,<ACCEL>,<MAP>,<MAF>,<CAM>,<INJ>,<RUN>\n
- * - [Standard6Field]: $<PATTERN>,<RPM>,<ACCEL>,<RAIL>,<ECT>,<RUN>\n
- */
 enum class SerialPacketMode(val label: String, val description: String) {
     KeyValueCommands(
         label = "Key=Value Commands (Default)",
@@ -72,13 +65,9 @@ enum class SerialPacketMode(val label: String, val description: String) {
 }
 
 /**
- * Full-featured Bluetooth Classic SPP Connection Manager for Arduino Uno + HC-05 (9600 baud).
- * Sends direct newline-terminated commands:
- * - START button -> "START\n"
- * - STOP button  -> "STOP\n"
- * - RPM slider   -> "RPM=800\n"
- * - Rail slider  -> "RAIL=450\n"
- * - ECT slider   -> "ECT=80\n"
+ * Bluetooth Connection Manager for ECU LAB.
+ * Sanitizes technical hardware names (e.g., HC-05, HC-06, Arduino) into friendly
+ * "ECU LAB Bluetooth" names so technical hardware naming conventions are completely hidden.
  */
 class Hc05BluetoothController(private val context: Context) {
 
@@ -141,13 +130,15 @@ class Hc05BluetoothController(private val context: Context) {
                     }
                     val rssi = intent.getShortExtra(BluetoothDevice.EXTRA_RSSI, Short.MIN_VALUE).toInt()
                     if (device != null && hasBluetoothPermissions()) {
-                        val devName = device.name ?: "Unnamed BT (${device.address.takeLast(5)})"
+                        val rawName = device.name ?: ""
+                        val isTarget = isTargetBtDevice(rawName)
+                        val displayName = sanitizeDisplayName(rawName, device.address)
                         val isBonded = device.bondState == BluetoothDevice.BOND_BONDED
                         val item = BtDeviceItem(
-                            name = devName,
+                            name = displayName,
                             address = device.address,
                             isPaired = isBonded,
-                            isHc05Candidate = isHc05Name(devName),
+                            isHc05Candidate = isTarget,
                             rssi = if (rssi != Short.MIN_VALUE.toInt()) rssi else null
                         )
                         if (isBonded) {
@@ -173,7 +164,6 @@ class Hc05BluetoothController(private val context: Context) {
                     if (_connectionState.value !is BtConnectionState.Connected) {
                         _connectionState.value = BtConnectionState.Scanning(_discoveredDevices.value.size)
                     }
-                    appendLog("SCAN -> Searching for nearby HC-05 / Arduino modules...")
                 }
 
                 BluetoothAdapter.ACTION_DISCOVERY_FINISHED -> {
@@ -181,7 +171,6 @@ class Hc05BluetoothController(private val context: Context) {
                     if (_connectionState.value is BtConnectionState.Scanning) {
                         _connectionState.value = BtConnectionState.Disconnected
                     }
-                    appendLog("SCAN -> Discovery finished (${_discoveredDevices.value.size} new devices)")
                 }
 
                 BluetoothDevice.ACTION_BOND_STATE_CHANGED -> {
@@ -193,29 +182,27 @@ class Hc05BluetoothController(private val context: Context) {
                     }
                     val bondState = intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, BluetoothDevice.ERROR)
                     if (device != null && hasBluetoothPermissions()) {
-                        val devName = device.name ?: device.address
+                        val rawName = device.name ?: ""
+                        val displayName = sanitizeDisplayName(rawName, device.address)
                         when (bondState) {
                             BluetoothDevice.BOND_BONDING -> {
-                                _connectionState.value = BtConnectionState.Pairing(devName, device.address)
-                                appendLog("PAIRING -> Bonding with $devName (Default PIN: 1234 or 0000)")
+                                _connectionState.value = BtConnectionState.Pairing(displayName, device.address)
                             }
                             BluetoothDevice.BOND_BONDED -> {
-                                appendLog("PAIRED -> $devName bonded! Connecting SPP socket...")
                                 refreshPairedDevices()
                                 _discoveredDevices.value = _discoveredDevices.value.filterNot { it.address == device.address }
                                 connectToDevice(
                                     BtDeviceItem(
-                                        name = devName,
+                                        name = displayName,
                                         address = device.address,
                                         isPaired = true,
-                                        isHc05Candidate = isHc05Name(devName)
+                                        isHc05Candidate = isTargetBtDevice(rawName)
                                     )
                                 )
                             }
                             BluetoothDevice.BOND_NONE -> {
                                 if (_connectionState.value is BtConnectionState.Pairing) {
-                                    _connectionState.value = BtConnectionState.Error("Pairing rejected or timed out for $devName (Try PIN 1234)")
-                                    appendLog("ERR -> Pairing failed with $devName")
+                                    _connectionState.value = BtConnectionState.Error("Pairing canceled or rejected for $displayName")
                                 }
                             }
                         }
@@ -227,13 +214,11 @@ class Hc05BluetoothController(private val context: Context) {
                     if (current is BtConnectionState.Connected) {
                         disconnectInternal()
                         _connectionState.value = BtConnectionState.Disconnected
-                        appendLog("LINK -> HC-05 disconnected (${current.deviceName})")
                         val lastDev = lastConnectedDevice
                         if (_autoReconnect.value && lastDev != null) {
                             scope.launch {
                                 delay(2500L)
                                 if (_connectionState.value !is BtConnectionState.Connected) {
-                                    appendLog("AUTO-RECONNECT -> Retrying ${lastDev.name}...")
                                     connectToDevice(lastDev)
                                 }
                             }
@@ -269,11 +254,36 @@ class Hc05BluetoothController(private val context: Context) {
         }
     }
 
-    private fun isHc05Name(name: String): Boolean {
-        return name.contains("HC-05", ignoreCase = true) ||
-            name.contains("HC-06", ignoreCase = true) ||
-            name.contains("HC05", ignoreCase = true) ||
+    /**
+     * Hides technical hardware module names ("HC-05", "HC-06", "Arduino", etc.) and presents
+     * clean Bluetooth device names in the discovery and pairing list.
+     */
+    private fun sanitizeDisplayName(rawName: String?, address: String): String {
+        val trimmed = rawName?.trim().orEmpty()
+        val suffix = address.replace(":", "").takeLast(4).uppercase(Locale.US)
+        if (trimmed.isEmpty()) {
+            return "Bluetooth Device ($suffix)"
+        }
+        val lower = trimmed.lowercase(Locale.US)
+        if (lower.contains("hc-05") ||
+            lower.contains("hc05") ||
+            lower.contains("hc-06") ||
+            lower.contains("hc06") ||
+            lower.contains("arduino") ||
+            lower.contains("bt04") ||
+            lower.contains("jdym")
+        ) {
+            return "ECU LAB Bluetooth ($suffix)"
+        }
+        return trimmed
+    }
+
+    private fun isTargetBtDevice(rawName: String?): Boolean {
+        val name = rawName.orEmpty()
+        return name.contains("HC", ignoreCase = true) ||
+            name.contains("BT", ignoreCase = true) ||
             name.contains("ECU", ignoreCase = true) ||
+            name.contains("LAB", ignoreCase = true) ||
             name.contains("ARDUINO", ignoreCase = true)
     }
 
@@ -319,7 +329,6 @@ class Hc05BluetoothController(private val context: Context) {
 
     fun setSerialPacketMode(mode: SerialPacketMode) {
         _packetMode.value = mode
-        appendLog("PROTOCOL -> Switched to ${mode.label}")
     }
 
     @SuppressLint("MissingPermission")
@@ -331,12 +340,12 @@ class Hc05BluetoothController(private val context: Context) {
         try {
             val bonded: Set<BluetoothDevice> = bluetoothAdapter.bondedDevices ?: emptySet()
             val items = bonded.map { device ->
-                val devName = device.name ?: "Unknown Device"
+                val rawName = device.name
                 BtDeviceItem(
-                    name = devName,
+                    name = sanitizeDisplayName(rawName, device.address),
                     address = device.address,
                     isPaired = true,
-                    isHc05Candidate = isHc05Name(devName)
+                    isHc05Candidate = isTargetBtDevice(rawName)
                 )
             }.sortedByDescending { it.isHc05Candidate }
             _pairedDevices.value = items
@@ -350,11 +359,11 @@ class Hc05BluetoothController(private val context: Context) {
         registerReceiverIfNeeded()
         refreshPairedDevices()
         if (!hasScanPermissions()) {
-            _connectionState.value = BtConnectionState.Error("Bluetooth Scan permission is required to discover HC-05")
+            _connectionState.value = BtConnectionState.Error("Bluetooth permission is required to scan")
             return
         }
         if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled) {
-            _connectionState.value = BtConnectionState.Error("Bluetooth is turned off. Please enable Bluetooth.")
+            _connectionState.value = BtConnectionState.Error("Please turn on Bluetooth to scan for devices")
             return
         }
         try {
@@ -365,7 +374,6 @@ class Hc05BluetoothController(private val context: Context) {
             val started = bluetoothAdapter.startDiscovery()
             if (!started) {
                 _isScanning.value = false
-                appendLog("WARN -> Discovery scan could not start (check Location/Bluetooth service)")
             }
         } catch (_: SecurityException) {
             _connectionState.value = BtConnectionState.Error("Bluetooth scan permission denied")
@@ -396,7 +404,7 @@ class Hc05BluetoothController(private val context: Context) {
     @SuppressLint("MissingPermission")
     fun pairAndConnectDevice(deviceItem: BtDeviceItem) {
         if (!hasBluetoothPermissions() || bluetoothAdapter == null) {
-            _connectionState.value = BtConnectionState.Error("Bluetooth permission required to pair with HC-05")
+            _connectionState.value = BtConnectionState.Error("Bluetooth permission required to pair")
             return
         }
         try {
@@ -406,25 +414,24 @@ class Hc05BluetoothController(private val context: Context) {
                 connectToDevice(deviceItem.copy(isPaired = true))
             } else {
                 _connectionState.value = BtConnectionState.Pairing(deviceItem.name, deviceItem.address)
-                appendLog("PAIR -> Requesting bond with ${deviceItem.name} [${deviceItem.address}]...")
                 val bondInitiated = remoteDevice.createBond()
                 if (!bondInitiated) {
                     connectToDevice(deviceItem)
                 }
             }
         } catch (e: Exception) {
-            _connectionState.value = BtConnectionState.Error("Pairing error: ${e.localizedMessage}")
+            _connectionState.value = BtConnectionState.Error("Pairing failed: ${e.localizedMessage}")
         }
     }
 
     @SuppressLint("MissingPermission")
     fun connectToDevice(deviceItem: BtDeviceItem) {
         if (!hasBluetoothPermissions()) {
-            _connectionState.value = BtConnectionState.Error("Bluetooth Connect permission required")
+            _connectionState.value = BtConnectionState.Error("Bluetooth permission required")
             return
         }
         if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled) {
-            _connectionState.value = BtConnectionState.Error("Bluetooth is turned off on this device")
+            _connectionState.value = BtConnectionState.Error("Bluetooth is turned off")
             return
         }
 
@@ -432,7 +439,6 @@ class Hc05BluetoothController(private val context: Context) {
             stopDiscoveryScan()
             disconnectInternal()
             _connectionState.value = BtConnectionState.Connecting(deviceItem.name, deviceItem.address)
-            appendLog("CONNECTING -> ${deviceItem.name} [${deviceItem.address}]...")
 
             try {
                 val device = bluetoothAdapter.getRemoteDevice(deviceItem.address)
@@ -451,9 +457,8 @@ class Hc05BluetoothController(private val context: Context) {
                 } catch (_: Exception) {
                     disconnectInternal()
                     _connectionState.value = BtConnectionState.Error(
-                        "Could not connect to ${deviceItem.name}. Ensure HC-05 is powered & paired (PIN 1234)."
+                        "Unable to connect to ${deviceItem.name}. Make sure the Bluetooth device is powered on."
                     )
-                    appendLog("ERR -> Connection failed (${deviceItem.name})")
                 }
             }
         }
@@ -464,7 +469,6 @@ class Hc05BluetoothController(private val context: Context) {
         outputStream = socket.outputStream
         lastConnectedDevice = deviceItem.copy(isPaired = true)
         _connectionState.value = BtConnectionState.Connected(deviceItem.name, deviceItem.address)
-        appendLog("CONNECTED -> ${deviceItem.name} [${deviceItem.address}] @ 9600 baud")
         startIncomingReader(socket)
     }
 
@@ -491,7 +495,6 @@ class Hc05BluetoothController(private val context: Context) {
             lastConnectedDevice = null
             disconnectInternal()
             _connectionState.value = BtConnectionState.Disconnected
-            appendLog("DISCONNECTED -> Manual disconnect")
         }
     }
 
@@ -508,74 +511,63 @@ class Hc05BluetoothController(private val context: Context) {
         activeSocket = null
     }
 
-    /**
-     * Direct command senders requested by user:
-     * - START button -> Sends "START\n"
-     * - STOP button  -> Sends "STOP\n"
-     * - RPM slider   -> Sends "RPM=800\n"
-     * - Rail slider  -> Sends "RAIL=450\n"
-     * - ECT slider   -> Sends "ECT=80\n"
-     */
     fun sendStartCommand() {
-        sendLineToHc05(wireLine = "START", displayLabel = "START\\n")
+        sendLineToBt(wireLine = "START", displayLabel = "START\\n")
     }
 
     fun sendStopCommand() {
-        sendLineToHc05(wireLine = "STOP", displayLabel = "STOP\\n")
+        sendLineToBt(wireLine = "STOP", displayLabel = "STOP\\n")
     }
 
     fun sendRpmCommand(rpm: Int) {
-        sendLineToHc05(wireLine = "RPM=$rpm", displayLabel = "RPM=$rpm\\n")
+        sendLineToBt(wireLine = "RPM=$rpm", displayLabel = "RPM=$rpm\\n")
     }
 
     fun sendRailCommand(rail: Int) {
-        sendLineToHc05(wireLine = "RAIL=$rail", displayLabel = "RAIL=$rail\\n")
+        sendLineToBt(wireLine = "RAIL=$rail", displayLabel = "RAIL=$rail\\n")
     }
 
     fun sendEctCommand(ect: Int) {
-        sendLineToHc05(wireLine = "ECT=$ect", displayLabel = "ECT=$ect\\n")
+        sendLineToBt(wireLine = "ECT=$ect", displayLabel = "ECT=$ect\\n")
     }
 
     fun sendSpeedCommand(speed: Int) {
-        sendLineToHc05(wireLine = "SPEED=$speed", displayLabel = "SPEED=$speed\\n")
+        sendLineToBt(wireLine = "SPEED=$speed", displayLabel = "SPEED=$speed\\n")
     }
 
     fun sendAccelCommand(accel: Int) {
-        sendLineToHc05(wireLine = "ACCEL=$accel", displayLabel = "ACCEL=$accel\\n")
+        sendLineToBt(wireLine = "ACCEL=$accel", displayLabel = "ACCEL=$accel\\n")
     }
 
     fun sendMapCommand(mapKpa: Int) {
-        sendLineToHc05(wireLine = "MAP=$mapKpa", displayLabel = "MAP=$mapKpa\\n")
+        sendLineToBt(wireLine = "MAP=$mapKpa", displayLabel = "MAP=$mapKpa\\n")
     }
 
     fun sendMafCommand(mafGs: Int) {
-        sendLineToHc05(wireLine = "MAF=$mafGs", displayLabel = "MAF=$mafGs\\n")
+        sendLineToBt(wireLine = "MAF=$mafGs", displayLabel = "MAF=$mafGs\\n")
     }
 
     fun sendCamSyncCommand(enabled: Boolean) {
         val v = if (enabled) 1 else 0
-        sendLineToHc05(wireLine = "CAM=$v", displayLabel = "CAM=$v\\n")
+        sendLineToBt(wireLine = "CAM=$v", displayLabel = "CAM=$v\\n")
     }
 
     fun sendInjectorCommand(enabled: Boolean) {
         val v = if (enabled) 1 else 0
-        sendLineToHc05(wireLine = "INJ=$v", displayLabel = "INJ=$v\\n")
+        sendLineToBt(wireLine = "INJ=$v", displayLabel = "INJ=$v\\n")
     }
 
     fun sendTestPing() {
-        sendLineToHc05(wireLine = "PING", displayLabel = "PING\\n")
+        sendLineToBt(wireLine = "PING", displayLabel = "PING\\n")
     }
 
-    /**
-     * Sends any custom raw serial command to the Arduino Uno over HC-05 (automatically appends \n).
-     */
     fun sendCustomRawCommand(rawCommand: String) {
         val cleaned = rawCommand.trim()
         if (cleaned.isEmpty()) return
-        sendLineToHc05(wireLine = cleaned, displayLabel = "$cleaned\\n")
+        sendLineToBt(wireLine = cleaned, displayLabel = "$cleaned\\n")
     }
 
-    private fun sendLineToHc05(wireLine: String, displayLabel: String) {
+    private fun sendLineToBt(wireLine: String, displayLabel: String) {
         val payload = "$wireLine\n"
         scope.launch {
             val stream = outputStream
@@ -589,20 +581,12 @@ class Hc05BluetoothController(private val context: Context) {
                     appendLog("TX -> $displayLabel")
                 } catch (e: IOException) {
                     disconnectInternal()
-                    _connectionState.value = BtConnectionState.Error("HC-05 link lost: ${e.localizedMessage}")
-                    appendLog("ERR -> Link lost during TX ($displayLabel)")
+                    _connectionState.value = BtConnectionState.Error("Bluetooth link lost")
                 }
-            } else {
-                appendLog("BUFFERED (NO HC-05) -> $displayLabel")
             }
         }
     }
 
-    /**
-     * Transmits all parameters when loading a vehicle or preset, or when operating in CSV frame mode.
-     * In KeyValueCommands mode (the default), it sends:
-     * RPM=<val>\n, RAIL=<val>\n, ECT=<val>\n, SPEED=<val>\n, ACCEL=<val>\n, and START\n or STOP\n.
-     */
     fun sendEcuFrame(
         internalCrankPattern: String,
         rpm: Int,
@@ -618,7 +602,6 @@ class Hc05BluetoothController(private val context: Context) {
     ) {
         val mode = _packetMode.value
         if (mode == SerialPacketMode.KeyValueCommands) {
-            // Send the discrete Key=Value lines + START/STOP state
             val batchPayload = buildString {
                 append("RPM=$rpm\n")
                 append("RAIL=$railBar\n")
@@ -629,7 +612,6 @@ class Hc05BluetoothController(private val context: Context) {
                 append("MAF=$mafGramsSec\n")
                 append(if (isRunning) "START\n" else "STOP\n")
             }
-            val summaryLog = "RPM=$rpm\\n RAIL=$railBar\\n ECT=$ectCelsius\\n ${if (isRunning) "START\\n" else "STOP\\n"}"
             scope.launch {
                 val stream = outputStream
                 if (stream != null && _connectionState.value is BtConnectionState.Connected) {
@@ -639,13 +621,10 @@ class Hc05BluetoothController(private val context: Context) {
                             stream.flush()
                         }
                         _packetsSentCount.value += 1
-                        appendLog("TX -> $summaryLog")
-                    } catch (e: IOException) {
+                    } catch (_: IOException) {
                         disconnectInternal()
-                        _connectionState.value = BtConnectionState.Error("HC-05 link lost: ${e.localizedMessage}")
+                        _connectionState.value = BtConnectionState.Error("Bluetooth link lost")
                     }
-                } else {
-                    appendLog("BUFFERED (NO HC-05) -> $summaryLog")
                 }
             }
             return
@@ -663,15 +642,7 @@ class Hc05BluetoothController(private val context: Context) {
             SerialPacketMode.KeyValueCommands -> ""
         }
 
-        val displayPacket = when (mode) {
-            SerialPacketMode.Extended11Field ->
-                "\$RPM:$rpm,RAIL:$railBar,ECT:$ectCelsius,SPD:$speedKmh,ACC:$accelPercent,MAP:$boostMapKpa,MAF:$mafGramsSec,CAM:$camFlag,INJ:$injFlag,RUN:$runFlag"
-            SerialPacketMode.Standard6Field ->
-                "\$RPM:$rpm,ACC:$accelPercent,RAIL:$railBar,ECT:$ectCelsius,RUN:$runFlag"
-            SerialPacketMode.KeyValueCommands -> ""
-        }
-
-        sendLineToHc05(wireLine = wirePacket.trimEnd('\n'), displayLabel = displayPacket)
+        sendLineToBt(wireLine = wirePacket.trimEnd('\n'), displayLabel = wirePacket.trim())
     }
 
     fun clearLogs() {

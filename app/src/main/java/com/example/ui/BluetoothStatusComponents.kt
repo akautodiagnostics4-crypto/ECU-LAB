@@ -38,8 +38,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.Radar
-import androidx.compose.material.icons.filled.Send
-import androidx.compose.material.icons.filled.SettingsBluetooth
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -58,7 +56,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -75,15 +72,13 @@ import com.example.ui.theme.ElectricBlue
 import com.example.ui.theme.SignalGreen
 import com.example.ui.theme.SignalGreenBg
 import com.example.ui.theme.StopRed
-import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextSecondary
 import com.example.ui.theme.TextWhite
 import com.example.ui.theme.WarningAmber
 
 /**
- * Persistent top-of-screen HC-05 + Arduino Uno Bluetooth Connection Status Indicator Bar.
- * Shows real-time LED indicator, current connection state (CONNECTED, PAIRING, CONNECTING,
- * SCANNING, or DISCONNECTED), TX/RX packet counters, and a quick-connect / manage button.
+ * Clean top-of-screen Bluetooth Connection Status Bar.
+ * Hides all technical hardware/protocol details and shows only the friendly Bluetooth status.
  */
 @Composable
 fun Hc05StatusIndicatorBar(
@@ -126,38 +121,38 @@ fun Hc05StatusIndicatorBar(
     val (ledColor, statusTitle, statusSubtitle, isBusy) = when (btState) {
         is BtConnectionState.Connected -> Quad(
             SignalGreen,
-            "HC-05 CONNECTED • ${btState.deviceName}",
-            "Arduino Uno Link Active (9600 baud) • TX: $packetsSent  RX: $packetsReceived",
+            "BLUETOOTH CONNECTED",
+            btState.deviceName,
             false
         )
         is BtConnectionState.Connecting -> Quad(
             WarningAmber,
-            "CONNECTING TO ${btState.deviceName}...",
-            "Opening RFCOMM SPP channel (${btState.address})",
+            "CONNECTING...",
+            btState.deviceName,
             true
         )
         is BtConnectionState.Pairing -> Quad(
             CyanGlow,
-            "PAIRING WITH ${btState.deviceName}...",
-            "Enter HC-05 PIN 1234 or 0000 when prompted",
+            "PAIRING...",
+            btState.deviceName,
             true
         )
         is BtConnectionState.Scanning -> Quad(
             CyanGlow,
-            "SCANNING FOR HC-05 MODULE...",
-            "Found ${btState.foundCount} nearby Bluetooth device(s)",
+            "SCANNING BLUETOOTH...",
+            "Searching for nearby devices",
             true
         )
         is BtConnectionState.Error -> Quad(
             StopRed,
-            "HC-05 CONNECTION ALERT",
+            "BLUETOOTH DISCONNECTED",
             btState.message,
             false
         )
         BtConnectionState.Disconnected -> Quad(
             StopRed,
-            "HC-05 NOT CONNECTED",
-            "Tap to pair or connect with Arduino Uno HC-05 module",
+            "BLUETOOTH NOT CONNECTED",
+            "Tap to select a Bluetooth device",
             false
         )
     }
@@ -196,7 +191,6 @@ fun Hc05StatusIndicatorBar(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.weight(1f)
             ) {
-                // Animated LED + Bluetooth Icon badge
                 Box(
                     modifier = Modifier
                         .size(36.dp)
@@ -218,7 +212,7 @@ fun Hc05StatusIndicatorBar(
                                 is BtConnectionState.Scanning -> Icons.Default.BluetoothSearching
                                 else -> Icons.Default.BluetoothDisabled
                             },
-                            contentDescription = "HC-05 Connection Status",
+                            contentDescription = "Bluetooth Status",
                             tint = ledColor,
                             modifier = Modifier.size(18.dp)
                         )
@@ -260,14 +254,7 @@ fun Hc05StatusIndicatorBar(
 
             Spacer(modifier = Modifier.width(8.dp))
 
-            // Quick Connect / Manage Pill Button
-            val actionLabel = when (btState) {
-                is BtConnectionState.Connected -> "MANAGE"
-                is BtConnectionState.Connecting,
-                is BtConnectionState.Pairing,
-                is BtConnectionState.Scanning -> "DEVICES"
-                else -> "PAIR / LINK"
-            }
+            val actionLabel = if (btState is BtConnectionState.Connected) "CONNECTED" else "PAIR"
             val actionBg = if (btState is BtConnectionState.Connected) SignalGreenBg else ElectricBlue.copy(alpha = 0.2f)
             val actionTextColor = if (btState is BtConnectionState.Connected) SignalGreen else CyanGlow
 
@@ -306,7 +293,8 @@ private data class Quad<A, B, C, D>(
 )
 
 /**
- * Interactive Bottom Sheet for pairing and connecting to the Arduino HC-05 module from any screen.
+ * Clean Modal Bottom Sheet displaying only the Bluetooth device list for pairing and connecting.
+ * Hides all technical hardware naming conventions, MAC addresses, and RSSI numbers.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -359,7 +347,6 @@ fun Hc05ConnectionBottomSheet(
                 .padding(horizontal = 18.dp, vertical = 8.dp)
                 .testTag("hc05_connection_bottom_sheet")
         ) {
-            // Sheet Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -367,7 +354,7 @@ fun Hc05ConnectionBottomSheet(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        imageVector = Icons.Default.SettingsBluetooth,
+                        imageVector = Icons.Default.Bluetooth,
                         contentDescription = null,
                         tint = CyanGlow,
                         modifier = Modifier.size(24.dp)
@@ -375,13 +362,13 @@ fun Hc05ConnectionBottomSheet(
                     Spacer(modifier = Modifier.width(10.dp))
                     Column {
                         Text(
-                            text = "HC-05 ARDUINO CONNECTION MANAGER",
+                            text = "BLUETOOTH DEVICES",
                             style = MaterialTheme.typography.titleLarge,
                             color = TextWhite,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Bluetooth Classic SPP (9600 Baud • PIN 1234 / 0000)",
+                            text = "Select a Bluetooth device to pair and connect",
                             style = MaterialTheme.typography.labelSmall,
                             color = TextSecondary
                         )
@@ -398,138 +385,92 @@ fun Hc05ConnectionBottomSheet(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Active Connection Card
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = DeepObsidian,
-                border = androidx.compose.foundation.BorderStroke(
-                    1.dp,
-                    if (btState is BtConnectionState.Connected) SignalGreen else BorderSubtle
-                ),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(14.dp)) {
-                    val statusHeadline = when (btState) {
-                        is BtConnectionState.Connected -> "CONNECTED TO ${btState.deviceName} (${btState.address})"
-                        is BtConnectionState.Connecting -> "CONNECTING TO ${btState.deviceName}..."
-                        is BtConnectionState.Pairing -> "PAIRING WITH ${btState.deviceName}..."
-                        is BtConnectionState.Scanning -> "SCANNING FOR HC-05 MODULES..."
-                        is BtConnectionState.Error -> "ERROR: ${btState.message}"
-                        BtConnectionState.Disconnected -> "NOT CONNECTED TO HC-05"
-                    }
-                    Text(
-                        text = statusHeadline,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = when (btState) {
-                            is BtConnectionState.Connected -> SignalGreen
-                            is BtConnectionState.Error -> StopRed
-                            else -> CyanGlow
-                        },
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Packets TX: $packetsSent  |  Arduino ACK RX: $packetsReceived",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = TextSecondary
-                    )
-
-                    if (btState is BtConnectionState.Connected) {
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            modifier = Modifier.fillMaxWidth()
+            if (btState is BtConnectionState.Connected) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = DeepObsidian,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, SignalGreen),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = btState.deviceName,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = TextWhite,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Connected",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = SignalGreen
+                            )
+                        }
+                        OutlinedButton(
+                            onClick = onDisconnect,
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = StopRed),
+                            modifier = Modifier.testTag("sheet_disconnect_button")
                         ) {
-                            Button(
-                                onClick = onSendTestPing,
-                                colors = ButtonDefaults.buttonColors(containerColor = ElectricBlue),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .testTag("sheet_send_ping_button")
-                            ) {
-                                Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("TEST PING")
-                            }
-                            OutlinedButton(
-                                onClick = onDisconnect,
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = StopRed),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .testTag("sheet_disconnect_button")
-                            ) {
-                                Icon(Icons.Default.LinkOff, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("DISCONNECT")
-                            }
+                            Icon(Icons.Default.LinkOff, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("DISCONNECT")
                         }
                     }
                 }
+                Spacer(modifier = Modifier.height(12.dp))
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Scan / Pair Controls
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            Button(
+                onClick = {
+                    if (isScanning) onStopScan() else scanPermissionLauncher.launch(permissionsToRequest)
+                },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isScanning) StopRed else ElectricBlue
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .testTag("sheet_scan_hc05_button")
             ) {
-                Button(
-                    onClick = {
-                        if (isScanning) onStopScan() else scanPermissionLauncher.launch(permissionsToRequest)
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isScanning) StopRed else ElectricBlue
-                    ),
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(48.dp)
-                        .testTag("sheet_scan_hc05_button")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Radar,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = if (isScanning) "STOP SCANNING" else "SCAN FOR HC-05",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                OutlinedButton(
-                    onClick = {
-                        onDismiss()
-                        onGoToDeviceTab()
-                    },
-                    modifier = Modifier.height(48.dp)
-                ) {
-                    Text("FULL MONITOR", color = CyanGlow)
-                }
+                Icon(
+                    imageVector = Icons.Default.Radar,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = if (isScanning) "STOP SCANNING" else "SCAN FOR BLUETOOTH DEVICES",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold
+                )
             }
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Paired + Discovered Device List
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 140.dp, max = 300.dp),
+                    .heightIn(min = 140.dp, max = 320.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 if (pairedDevices.isNotEmpty()) {
                     item {
                         Text(
-                            text = "PAIRED BLUETOOTH DEVICES (TAP TO CONNECT)",
+                            text = "PAIRED DEVICES",
                             style = MaterialTheme.typography.labelSmall,
                             color = CyanGlow
                         )
                     }
                     items(pairedDevices, key = { "paired_${it.address}" }) { device ->
-                        BtDeviceRowCard(
+                        CleanBtDeviceRowCard(
                             device = device,
+                            statusLabel = "Paired",
                             actionLabel = "CONNECT",
                             onClick = { onConnectPaired(device) }
                         )
@@ -540,15 +481,16 @@ fun Hc05ConnectionBottomSheet(
                     item {
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "AVAILABLE NEARBY DEVICES (TAP TO PAIR WITH ARDUINO HC-05)",
+                            text = "AVAILABLE DEVICES",
                             style = MaterialTheme.typography.labelSmall,
                             color = SignalGreen
                         )
                     }
                     items(discoveredDevices, key = { "disc_${it.address}" }) { device ->
-                        BtDeviceRowCard(
+                        CleanBtDeviceRowCard(
                             device = device,
-                            actionLabel = "PAIR & LINK",
+                            statusLabel = "Available to pair",
+                            actionLabel = "PAIR",
                             onClick = { onPairAndConnect(device) }
                         )
                     }
@@ -563,7 +505,7 @@ fun Hc05ConnectionBottomSheet(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = "Power on your Arduino Uno + HC-05 module (blinking red LED) and tap 'SCAN FOR HC-05' above.",
+                                text = "Tap 'SCAN FOR BLUETOOTH DEVICES' to find nearby devices for pairing.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = TextSecondary
                             )
@@ -578,8 +520,9 @@ fun Hc05ConnectionBottomSheet(
 }
 
 @Composable
-private fun BtDeviceRowCard(
+private fun CleanBtDeviceRowCard(
     device: BtDeviceItem,
+    statusLabel: String,
     actionLabel: String,
     onClick: () -> Unit
 ) {
@@ -599,7 +542,7 @@ private fun BtDeviceRowCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 10.dp),
+                .padding(horizontal = 14.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -613,36 +556,18 @@ private fun BtDeviceRowCard(
                     tint = if (device.isHc05Candidate) CyanGlow else TextSecondary,
                     modifier = Modifier.size(20.dp)
                 )
-                Spacer(modifier = Modifier.width(10.dp))
+                Spacer(modifier = Modifier.width(12.dp))
                 Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = device.name,
-                            style = MaterialTheme.typography.titleMedium,
-                            color = TextWhite,
-                            fontWeight = FontWeight.Bold
-                        )
-                        if (device.isHc05Candidate) {
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .background(ElectricBlue.copy(alpha = 0.25f))
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                            ) {
-                                Text(
-                                    text = "HC-05 / ECU",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = CyanGlow
-                                )
-                            }
-                        }
-                    }
-                    val rssiText = device.rssi?.let { " • Signal: $it dBm" } ?: ""
                     Text(
-                        text = "${device.address}$rssiText",
+                        text = device.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = TextWhite,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = statusLabel,
                         style = MaterialTheme.typography.labelSmall,
-                        color = TextMuted
+                        color = TextSecondary
                     )
                 }
             }
@@ -652,7 +577,7 @@ private fun BtDeviceRowCard(
                 modifier = Modifier
                     .clip(RoundedCornerShape(6.dp))
                     .background(ButtonDarkSurface)
-                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.Link,

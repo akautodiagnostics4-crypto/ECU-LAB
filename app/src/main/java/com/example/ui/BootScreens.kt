@@ -157,6 +157,7 @@ fun LogoSplashScreen() {
 /**
  * Stage 2 (After 3 seconds, runs for 2 seconds):
  * Displays prominent "BOOT LOADING..." diagnostic initialization screen before all vehicle list appears.
+ * No Arduino or HC-05 hardware names are shown on the boot screen.
  */
 @Composable
 fun BootLoadingScreen() {
@@ -223,8 +224,8 @@ fun BootLoadingScreen() {
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                BootDiagnosticLine("ARDUINO UNO TIMER ENGINE", "READY")
-                BootDiagnosticLine("HC-05 SERIAL SPP 9600 BAUD", "READY")
+                BootDiagnosticLine("ECU SIGNAL ENGINE", "READY")
+                BootDiagnosticLine("BLUETOOTH MODULE", "READY")
                 BootDiagnosticLine("LOADING ALL VEHICLE PROFILES", "OK")
             }
         }

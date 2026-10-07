@@ -1,6 +1,7 @@
 package com.example.viewmodel
 
 import android.app.Application
+import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.room.Room
@@ -44,7 +45,11 @@ enum class AccentColorTheme(val label: String) {
 
 data class EcuControlUiState(
     val bootStage: BootStage = BootStage.LogoSplash,
-    val activeTab: EcuLabTab = EcuLabTab.Vehicles, // Opens directly to All Vehicle List after boot!
+    val isLoggedIn: Boolean = false,
+    val loggedInUsername: String = "akautodiagnostics",
+    val loginError: String? = null,
+    val showChangeCredentialsDialog: Boolean = false,
+    val activeTab: EcuLabTab = EcuLabTab.Vehicles, // Opens directly to All Vehicle List after boot & login!
     val selectedVehicle: VehicleModel = VehicleCatalog.allVehicles.first(),
     val selectedBrandFilter: String = "ALL",
     val searchQuery: String = "",
@@ -60,7 +65,6 @@ data class EcuControlUiState(
     val injectorPulseEnabled: Boolean = true, // Injector Load Feedback pulse ON/OFF
     val accentTheme: AccentColorTheme = AccentColorTheme.CyberBlue,
     val showSaveDialog: Boolean = false,
-    val showArduinoSketchModal: Boolean = false,
     val showBtQuickSheet: Boolean = false,
     val statusBannerMessage: String? = null
 )
@@ -88,7 +92,17 @@ class EcuLabViewModel(application: Application) : AndroidViewModel(application) 
 
         const val MAF_MIN = 0
         const val MAF_MAX = 500
+
+        private const val PREFS_NAME = "ecu_lab_auth_v2_prefs"
+        private const val KEY_SAVED_USERNAME = "saved_username"
+        private const val KEY_SAVED_PASSWORD = "saved_password"
+        private const val KEY_IS_LOGGED_IN = "is_logged_in"
+
+        const val DEFAULT_USERNAME = "akautodiagnostics"
+        const val DEFAULT_PASSWORD = "9791"
     }
+
+    private val authPrefs = application.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     private val database: EcuLabDatabase = Room.databaseBuilder(
         application,
@@ -99,7 +113,12 @@ class EcuLabViewModel(application: Application) : AndroidViewModel(application) 
     private val repository = EcuPresetRepository(database.ecuPresetDao())
     val bluetoothController = Hc05BluetoothController(application)
 
-    private val _uiState = MutableStateFlow(EcuControlUiState())
+    private val _uiState = MutableStateFlow(
+        EcuControlUiState(
+            isLoggedIn = authPrefs.getBoolean(KEY_IS_LOGGED_IN, false),
+            loggedInUsername = authPrefs.getString(KEY_SAVED_USERNAME, DEFAULT_USERNAME) ?: DEFAULT_USERNAME
+        )
+    )
     val uiState: StateFlow<EcuControlUiState> = _uiState.asStateFlow()
 
     val savedPresets: StateFlow<List<EcuPresetEntity>> = repository.allPresets.stateIn(
@@ -142,7 +161,86 @@ class EcuLabViewModel(application: Application) : AndroidViewModel(application) 
         _uiState.update {
             it.copy(
                 bootStage = BootStage.Ready,
+                isLoggedIn = true,
                 activeTab = EcuLabTab.Vehicles
+            )
+        }
+    }
+
+    fun getConfiguredUsername(): String {
+        return authPrefs.getString(KEY_SAVED_USERNAME, DEFAULT_USERNAME) ?: DEFAULT_USERNAME
+    }
+
+    private fun getConfiguredPassword(): String {
+        return authPrefs.getString(KEY_SAVED_PASSWORD, DEFAULT_PASSWORD) ?: DEFAULT_PASSWORD
+    }
+
+    fun login(usernameInput: String, passwordInput: String, rememberMe: Boolean) {
+        val cleanUser = usernameInput.trim()
+        val cleanPass = passwordInput.trim()
+        val expectedUser = getConfiguredUsername()
+        val expectedPass = getConfiguredPassword()
+
+        val isMatch = (cleanUser.equals(expectedUser, ignoreCase = true) && cleanPass == expectedPass) ||
+            (cleanUser.equals(DEFAULT_USERNAME, ignoreCase = true) && cleanPass == DEFAULT_PASSWORD)
+
+        if (isMatch) {
+            if (rememberMe) {
+                authPrefs.edit().putBoolean(KEY_IS_LOGGED_IN, true).apply()
+            }
+            _uiState.update {
+                it.copy(
+                    isLoggedIn = true,
+                    loggedInUsername = cleanUser.ifEmpty { expectedUser },
+                    loginError = null,
+                    activeTab = EcuLabTab.Vehicles // Opens All Vehicles List right after login
+                )
+            }
+        } else {
+            _uiState.update {
+                it.copy(
+                    loginError = "Invalid username or password. Please try again."
+                )
+            }
+        }
+    }
+
+    fun clearLoginError() {
+        _uiState.update { it.copy(loginError = null) }
+    }
+
+    fun logout() {
+        authPrefs.edit().putBoolean(KEY_IS_LOGGED_IN, false).apply()
+        _uiState.update {
+            it.copy(
+                isLoggedIn = false,
+                isSignalRunning = false,
+                loginError = null
+            )
+        }
+        bluetoothController.sendStopCommand()
+    }
+
+    fun setShowChangeCredentialsDialog(show: Boolean) {
+        _uiState.update { it.copy(showChangeCredentialsDialog = show) }
+    }
+
+    fun updateLoginCredentials(newUsername: String, newPassword: String) {
+        val cleanUser = newUsername.trim()
+        val cleanPass = newPassword.trim()
+        if (cleanUser.isEmpty() || cleanPass.isEmpty()) {
+            _uiState.update { it.copy(statusBannerMessage = "Username and password cannot be empty") }
+            return
+        }
+        authPrefs.edit()
+            .putString(KEY_SAVED_USERNAME, cleanUser)
+            .putString(KEY_SAVED_PASSWORD, cleanPass)
+            .apply()
+        _uiState.update {
+            it.copy(
+                loggedInUsername = cleanUser,
+                showChangeCredentialsDialog = false,
+                statusBannerMessage = "Login credentials updated for '$cleanUser'"
             )
         }
     }
@@ -256,9 +354,6 @@ class EcuLabViewModel(application: Application) : AndroidViewModel(application) 
         _uiState.update { it.copy(searchQuery = query) }
     }
 
-    /**
-     * RPM slider -> Sends "RPM=800\n" to HC-05 (or full CSV frame if CSV mode is selected)
-     */
     fun updateRpm(newRpm: Int) {
         val clamped = newRpm.coerceIn(RPM_MIN, RPM_MAX)
         _uiState.update { it.copy(rpm = clamped) }
@@ -269,9 +364,6 @@ class EcuLabViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    /**
-     * Rail Pressure slider -> Sends "RAIL=450\n" to HC-05
-     */
     fun updateRailPressure(newRail: Int) {
         val clamped = newRail.coerceIn(RAIL_MIN, RAIL_MAX)
         _uiState.update { it.copy(railPressure = clamped) }
@@ -282,9 +374,6 @@ class EcuLabViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    /**
-     * ECT slider -> Sends "ECT=80\n" to HC-05
-     */
     fun updateEctTemp(newEct: Int) {
         val clamped = newEct.coerceIn(ECT_MIN, ECT_MAX)
         _uiState.update { it.copy(ectTemp = clamped) }
@@ -295,9 +384,6 @@ class EcuLabViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    /**
-     * Vehicle Speed slider -> Sends "SPEED=<val>\n" to HC-05
-     */
     fun updateVehicleSpeed(newSpeed: Int) {
         val clamped = newSpeed.coerceIn(SPEED_MIN, SPEED_MAX)
         _uiState.update { it.copy(vehicleSpeed = clamped) }
@@ -308,9 +394,6 @@ class EcuLabViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    /**
-     * Accelerator slider -> Sends "ACCEL=<val>\n" to HC-05
-     */
     fun updateAccelerator(newAccel: Int) {
         val clamped = newAccel.coerceIn(ACCEL_MIN, ACCEL_MAX)
         _uiState.update { it.copy(accelerator = clamped) }
@@ -321,9 +404,6 @@ class EcuLabViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    /**
-     * Boost MAP slider -> Sends "MAP=<val>\n" to HC-05
-     */
     fun updateBoostMap(newMapKpa: Int) {
         val clamped = newMapKpa.coerceIn(MAP_MIN, MAP_MAX)
         _uiState.update { it.copy(boostMapKpa = clamped) }
@@ -334,9 +414,6 @@ class EcuLabViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    /**
-     * MAF slider -> Sends "MAF=<val>\n" to HC-05
-     */
     fun updateMaf(newMaf: Int) {
         val clamped = newMaf.coerceIn(MAF_MIN, MAF_MAX)
         _uiState.update { it.copy(mafGramsSec = clamped) }
@@ -375,17 +452,12 @@ class EcuLabViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    /**
-     * START / STOP button:
-     * - When starting -> Sends "START\n" to HC-05
-     * - When stopping -> Sends "STOP\n" to HC-05
-     */
     fun toggleSignalGeneration() {
         val nextRunning = !_uiState.value.isSignalRunning
         _uiState.update { state ->
             state.copy(
                 isSignalRunning = nextRunning,
-                statusBannerMessage = if (nextRunning) "Sent START\\n to HC-05" else "Sent STOP\\n to HC-05"
+                statusBannerMessage = if (nextRunning) "Sent START\\n via Bluetooth" else "Sent STOP\\n via Bluetooth"
             )
         }
         if (bluetoothController.packetMode.value == SerialPacketMode.KeyValueCommands) {
@@ -481,10 +553,6 @@ class EcuLabViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             repository.deletePreset(id)
         }
-    }
-
-    fun setShowArduinoSketchModal(show: Boolean) {
-        _uiState.update { it.copy(showArduinoSketchModal = show) }
     }
 
     fun clearStatusBanner() {

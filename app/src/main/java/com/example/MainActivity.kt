@@ -47,6 +47,7 @@ import com.example.ui.ControlScreen
 import com.example.ui.DeviceScreen
 import com.example.ui.Hc05ConnectionBottomSheet
 import com.example.ui.Hc05StatusIndicatorBar
+import com.example.ui.LoginScreen
 import com.example.ui.LogoSplashScreen
 import com.example.ui.SavedPresetsScreen
 import com.example.ui.VehiclesScreen
@@ -121,6 +122,15 @@ fun EcuLabApp(
             }
 
             BootStage.Ready -> {
+                if (!uiState.isLoggedIn) {
+                    LoginScreen(
+                        loginError = uiState.loginError,
+                        onLoginSubmit = { user, pass, rememberMe ->
+                            viewModel.login(user, pass, rememberMe)
+                        },
+                        onClearError = { viewModel.clearLoginError() }
+                    )
+                } else {
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
                     containerColor = DeepObsidian,
@@ -207,8 +217,7 @@ fun EcuLabApp(
                                         txLog = txLog,
                                         packetsSent = packetsSent,
                                         packetsReceived = packetsReceived,
-                                        lastArduinoAck = lastArduinoAck,
-                                        showSketchModal = uiState.showArduinoSketchModal,
+                                        lastDeviceAck = lastArduinoAck,
                                         onRefreshPairedDevices = { viewModel.refreshBluetoothDevices() },
                                         onStartDiscoveryScan = { viewModel.startBtDiscoveryScan() },
                                         onStopDiscoveryScan = { viewModel.stopBtDiscoveryScan() },
@@ -220,7 +229,14 @@ fun EcuLabApp(
                                         onSendCustomCommand = { viewModel.sendCustomSerialCommand(it) },
                                         onSendTestPing = { viewModel.sendTestPing() },
                                         onClearLogs = { viewModel.clearBtLogs() },
-                                        onToggleSketchModal = { viewModel.setShowArduinoSketchModal(it) }
+                                        loggedInUsername = uiState.loggedInUsername,
+                                        showChangeCredentialsDialog = uiState.showChangeCredentialsDialog,
+                                        onOpenChangeCredentials = { viewModel.setShowChangeCredentialsDialog(true) },
+                                        onDismissChangeCredentials = { viewModel.setShowChangeCredentialsDialog(false) },
+                                        onSaveNewCredentials = { newUser, newPass ->
+                                            viewModel.updateLoginCredentials(newUser, newPass)
+                                        },
+                                        onLogout = { viewModel.logout() }
                                     )
                                 }
                             }
@@ -250,6 +266,7 @@ fun EcuLabApp(
                             onGoToDeviceTab = { viewModel.selectTab(EcuLabTab.Device) }
                         )
                     }
+                }
                 }
             }
         }
