@@ -102,7 +102,7 @@ import kotlin.math.roundToInt
  * - Cam Sync (CMP) & Injector Load Pulse Hardware Toggles
  * - 7 Real-Time Parameter Cards:
  *   1. Engine RPM (200 - 2500 rpm)
- *   2. Rail Pressure (100 - 1000 bar)
+ *   2. Rail Pressure (0 - 1200 bar)
  *   3. Coolant Temp ECT (0 - 200 °C)
  *   4. Vehicle Speed VSS (0 - 220 km/h)
  *   5. Accelerator Pedal APP (0 - 100 %)
@@ -227,7 +227,7 @@ fun ControlScreen(
                     )
                 }
 
-                // 2. Rail Pressure (100 to 1000 bar)
+                // 2. Rail Pressure (0 to 1200 bar)
                 item {
                     ParameterAdjustmentCard(
                         title = "Rail Pressure",
@@ -532,7 +532,7 @@ private fun LiveBenchGaugeCluster(
                     label = "RAIL PRESS",
                     valueText = "$rail",
                     unit = "bar",
-                    progress = (rail - 100f) / (1000f - 100f),
+                    progress = (rail - EcuLabViewModel.RAIL_MIN.toFloat()) / (EcuLabViewModel.RAIL_MAX - EcuLabViewModel.RAIL_MIN).toFloat(),
                     color = CyanGlow
                 )
                 CircularMiniGauge(

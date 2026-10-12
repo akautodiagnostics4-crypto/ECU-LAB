@@ -59,7 +59,7 @@ data class EcuControlUiState(
     val searchQuery: String = "",
     val isSignalRunning: Boolean = false,
     val rpm: Int = 800,                    // Range: 200 to 2500 rpm
-    val railPressure: Int = 300,           // Range: 100 to 1000 bar
+    val railPressure: Int = 300,           // Range: 0 to 1200 bar
     val ectTemp: Int = 90,                 // Range: 0 to 200 °C
     val vehicleSpeed: Int = 0,             // Range: 0 to 220 km/h
     val accelerator: Int = 0,              // Range: 0 to 100 %
@@ -79,8 +79,8 @@ class EcuLabViewModel(application: Application) : AndroidViewModel(application) 
         const val RPM_MIN = 200
         const val RPM_MAX = 2500
 
-        const val RAIL_MIN = 100
-        const val RAIL_MAX = 1000
+        const val RAIL_MIN = 0
+        const val RAIL_MAX = 1200
 
         const val ECT_MIN = 0
         const val ECT_MAX = 200
