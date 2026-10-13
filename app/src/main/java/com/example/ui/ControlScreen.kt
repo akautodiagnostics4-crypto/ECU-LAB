@@ -33,11 +33,13 @@ import androidx.compose.material.icons.filled.Compress
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Thermostat
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -128,6 +130,7 @@ fun ControlScreen(
     onInjectorPulseToggle: (Boolean) -> Unit,
     onApplyQuickMode: (String) -> Unit,
     onCycleAccentTheme: () -> Unit,
+    onResetAllValuesToZero: () -> Unit,
     onToggleStartStop: () -> Unit,
     onSavePresetConfirm: (String) -> Unit,
     onDismissSaveDialog: () -> Unit
@@ -151,13 +154,14 @@ fun ControlScreen(
                 .fillMaxSize()
                 .widthIn(max = 600.dp)
         ) {
-            // Top App Header with Branding, Vehicle Selector, Theme Switcher, and Save Preset Button
+            // Top App Header with Branding, Vehicle Selector, Theme Switcher, Save Preset Button, and Reset All Button
             ControlTopHeader(
                 selectedBrand = uiState.selectedVehicle.brand,
                 selectedModel = uiState.selectedVehicle.modelName,
                 accentColor = accentColor,
                 onTapSelectVehicle = onTapSelectVehicle,
                 onCycleAccentTheme = onCycleAccentTheme,
+                onTapResetAll = onResetAllValuesToZero,
                 onTapSavePreset = onTapSavePreset
             )
 
@@ -244,18 +248,23 @@ fun ControlScreen(
                     )
                 }
 
-                // 3. Coolant Temp (ECT) (0 to 200 °C)
+                // 3. Coolant Temp (ECT) (0 to 125 °C)
                 item {
+                    val ectCardAccent = when {
+                        uiState.ectTemp >= 105 -> StopRed
+                        uiState.ectTemp >= 95 -> WarningAmber
+                        else -> accentColor
+                    }
                     ParameterAdjustmentCard(
-                        title = "Coolant Temp (ECT)",
+                        title = if (uiState.ectTemp >= 105) "Coolant Temp (OVERHEAT)" else "Coolant Temp (ECT)",
                         value = uiState.ectTemp,
                         unit = "°C",
                         minRange = EcuLabViewModel.ECT_MIN,
                         maxRange = EcuLabViewModel.ECT_MAX,
                         coarseStep = 10,
                         fineStep = 1,
-                        icon = Icons.Default.Thermostat,
-                        accentColor = accentColor,
+                        icon = if (uiState.ectTemp >= 105) Icons.Default.Warning else Icons.Default.Thermostat,
+                        accentColor = ectCardAccent,
                         testTagPrefix = "param_ect",
                         onValueChange = onEctChange
                     )
@@ -330,9 +339,10 @@ fun ControlScreen(
                 }
             }
 
-            // Sticky Bottom START / STOP Signal Generation Button
+            // Sticky Bottom RESET ALL & START / STOP Signal Generation Action Footer
             StartStopActionFooter(
                 isRunning = uiState.isSignalRunning,
+                onResetAllValues = onResetAllValuesToZero,
                 onToggleStartStop = onToggleStartStop
             )
         }
@@ -355,6 +365,7 @@ private fun ControlTopHeader(
     accentColor: Color,
     onTapSelectVehicle: () -> Unit,
     onCycleAccentTheme: () -> Unit,
+    onTapResetAll: () -> Unit,
     onTapSavePreset: () -> Unit
 ) {
     Row(
@@ -439,7 +450,24 @@ private fun ControlTopHeader(
             }
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            // Master Reset to 0 Button
+            IconButton(
+                onClick = onTapResetAll,
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(StopRed.copy(alpha = 0.18f))
+                    .border(1.2.dp, StopRed.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
+                    .testTag("header_reset_all_button")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.RestartAlt,
+                    contentDescription = "Reset All Values to 0",
+                    tint = StopRed
+                )
+            }
+
             // Theme Color Accent Switcher Button
             IconButton(
                 onClick = onCycleAccentTheme,
@@ -500,12 +528,41 @@ private fun LiveBenchGaugeCluster(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "LIVE BENCH TELEMETRY CLUSTER",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = accentColor,
-                    fontWeight = FontWeight.Bold
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "LIVE BENCH TELEMETRY CLUSTER",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = accentColor,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (ect >= 105) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(StopRed.copy(alpha = 0.2f))
+                                .border(1.dp, StopRed, RoundedCornerShape(4.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Warning,
+                                    contentDescription = null,
+                                    tint = StopRed,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = "OVERHEAT ALERT (>105°C)",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = StopRed,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 10.sp
+                                )
+                            }
+                        }
+                    }
+                }
                 Text(
                     text = if (isRunning) "OUTPUT ACTIVE" else "STANDBY",
                     style = MaterialTheme.typography.labelSmall,
@@ -516,6 +573,13 @@ private fun LiveBenchGaugeCluster(
 
             Spacer(modifier = Modifier.height(10.dp))
 
+            val ectColor = when {
+                ect >= 105 -> StopRed
+                ect >= 95 -> WarningAmber
+                ect >= 50 -> SignalGreen
+                else -> CyanGlow
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly,
@@ -525,7 +589,7 @@ private fun LiveBenchGaugeCluster(
                     label = "ENGINE RPM",
                     valueText = "$rpm",
                     unit = "rpm",
-                    progress = (rpm - 200f) / (2500f - 200f),
+                    progress = if (rpm <= 0) 0f else (rpm - EcuLabViewModel.RPM_MIN.toFloat()) / (EcuLabViewModel.RPM_MAX - EcuLabViewModel.RPM_MIN).toFloat(),
                     color = accentColor
                 )
                 CircularMiniGauge(
@@ -536,11 +600,11 @@ private fun LiveBenchGaugeCluster(
                     color = CyanGlow
                 )
                 CircularMiniGauge(
-                    label = "BOOST MAP",
-                    valueText = "$mapKpa",
-                    unit = "kPa",
-                    progress = (mapKpa - 100f) / (300f - 100f),
-                    color = SignalGreen
+                    label = "COOLANT ECT",
+                    valueText = "$ect",
+                    unit = "°C",
+                    progress = (ect - EcuLabViewModel.ECT_MIN.toFloat()) / (EcuLabViewModel.ECT_MAX - EcuLabViewModel.ECT_MIN).toFloat(),
+                    color = ectColor
                 )
             }
 
@@ -550,7 +614,7 @@ private fun LiveBenchGaugeCluster(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                MiniReadoutPill("ECT TEMP", "$ect °C")
+                MiniReadoutPill("BOOST MAP", "$mapKpa kPa")
                 MiniReadoutPill("SPEED", "$speed km/h")
                 MiniReadoutPill("MAF FLOW", "$mafGs g/s")
             }
@@ -641,8 +705,9 @@ private fun QuickBenchModesBar(
     onSelectMode: (String) -> Unit
 ) {
     val modes = listOf(
+        "RESET_ZERO" to "RESET (0)",
         "CRANKING" to "Crank (250)",
-        "IDLE" to "Warm Idle",
+        "IDLE" to "Idle (85°C)",
         "CRUISE" to "Cruise (1650)",
         "FULL_LOAD" to "Full Boost"
     )
@@ -651,11 +716,16 @@ private fun QuickBenchModesBar(
         modifier = Modifier.fillMaxWidth()
     ) {
         items(modes) { (modeKey, label) ->
+            val isReset = modeKey == "RESET_ZERO"
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(10.dp))
-                    .background(CardDarkSurface)
-                    .border(1.dp, accentColor.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
+                    .background(if (isReset) StopRed.copy(alpha = 0.2f) else CardDarkSurface)
+                    .border(
+                        1.dp,
+                        if (isReset) StopRed else accentColor.copy(alpha = 0.45f),
+                        RoundedCornerShape(10.dp)
+                    )
                     .clickable { onSelectMode(modeKey) }
                     .padding(horizontal = 14.dp, vertical = 10.dp)
                     .testTag("quick_mode_${modeKey.lowercase()}")
@@ -663,7 +733,7 @@ private fun QuickBenchModesBar(
                 Text(
                     text = label,
                     style = MaterialTheme.typography.labelLarge,
-                    color = TextWhite,
+                    color = if (isReset) StopRed else TextWhite,
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -1013,6 +1083,7 @@ private fun StepperButton(
 @Composable
 private fun StartStopActionFooter(
     isRunning: Boolean,
+    onResetAllValues: () -> Unit,
     onToggleStartStop: () -> Unit
 ) {
     val buttonColor = if (isRunning) StopRed else SignalGreen
@@ -1024,30 +1095,67 @@ private fun StartStopActionFooter(
             .background(DeepObsidian)
             .padding(horizontal = 16.dp, vertical = 10.dp)
     ) {
-        Button(
-            onClick = onToggleStartStop,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp)
-                .testTag("start_stop_button"),
-            shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = buttonColor,
-                contentColor = TextWhite
-            )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = Icons.Default.PowerSettingsNew,
-                contentDescription = buttonLabel,
-                modifier = Modifier.size(22.dp)
-            )
-            Spacer(modifier = Modifier.width(10.dp))
-            Text(
-                text = buttonLabel,
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 2.sp
-            )
+            // Master Reset to 0 Action Button
+            Button(
+                onClick = onResetAllValues,
+                modifier = Modifier
+                    .weight(0.42f)
+                    .height(56.dp)
+                    .testTag("footer_reset_all_button"),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = ButtonDarkSurface,
+                    contentColor = StopRed
+                ),
+                border = androidx.compose.foundation.BorderStroke(1.2.dp, StopRed.copy(alpha = 0.7f))
+            ) {
+                Icon(
+                    imageVector = Icons.Default.RestartAlt,
+                    contentDescription = "Reset All Values to 0",
+                    tint = StopRed,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "RESET (0)",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = StopRed,
+                    letterSpacing = 1.sp
+                )
+            }
+
+            // Main START / STOP Signal Generation Button
+            Button(
+                onClick = onToggleStartStop,
+                modifier = Modifier
+                    .weight(0.58f)
+                    .height(56.dp)
+                    .testTag("start_stop_button"),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = buttonColor,
+                    contentColor = TextWhite
+                )
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PowerSettingsNew,
+                    contentDescription = buttonLabel,
+                    modifier = Modifier.size(22.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = buttonLabel,
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 2.sp
+                )
+            }
         }
     }
 }

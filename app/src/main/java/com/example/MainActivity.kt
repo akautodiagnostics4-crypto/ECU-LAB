@@ -182,6 +182,7 @@ fun EcuLabApp(
                                                 val next = all[(all.indexOf(uiState.accentTheme) + 1) % all.size]
                                                 viewModel.setAccentTheme(next)
                                             },
+                                            onResetAllValuesToZero = { viewModel.resetAllValuesToZero() },
                                             onToggleStartStop = { viewModel.toggleSignalGeneration() },
                                             onSavePresetConfirm = { viewModel.saveCurrentPreset(it) },
                                             onDismissSaveDialog = { viewModel.dismissSavePresetDialog() }

@@ -1,0 +1,6 @@
+{
+  "summary": "Implementation plan to update ECT temperature range to 0 to 125 °C, add a prominent Master Reset button that zeroes all bench parameters, and implement smart automotive telemetry safety indicators and ECT presets.",
+  "updatedAt": "2026-10-13T07:12:12.091592541Z",
+  "requestFeedback": true,
+  "userFacing": true
+}

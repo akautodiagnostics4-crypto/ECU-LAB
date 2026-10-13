@@ -60,7 +60,7 @@ data class EcuControlUiState(
     val isSignalRunning: Boolean = false,
     val rpm: Int = 800,                    // Range: 200 to 2500 rpm
     val railPressure: Int = 300,           // Range: 0 to 1200 bar
-    val ectTemp: Int = 90,                 // Range: 0 to 200 °C
+    val ectTemp: Int = 85,                 // Range: 0 to 125 °C (Engine Coolant Temp)
     val vehicleSpeed: Int = 0,             // Range: 0 to 220 km/h
     val accelerator: Int = 0,              // Range: 0 to 100 %
     val boostMapKpa: Int = 105,            // Range: 100 to 300 kPa (Boost / MAP sensor)
@@ -83,7 +83,7 @@ class EcuLabViewModel(application: Application) : AndroidViewModel(application) 
         const val RAIL_MAX = 1200
 
         const val ECT_MIN = 0
-        const val ECT_MAX = 200
+        const val ECT_MAX = 125
 
         const val SPEED_MIN = 0
         const val SPEED_MAX = 220
@@ -382,8 +382,44 @@ class EcuLabViewModel(application: Application) : AndroidViewModel(application) 
                     statusBannerMessage = "Applied Full Load / Boost Test (2400 RPM)"
                 )
             }
+            "RESET_ZERO" -> {
+                resetAllValuesToZero()
+                return
+            }
         }
         transmitCurrentFrame()
+    }
+
+    /**
+     * Resets all signal generator values to 0, stops signal transmission,
+     * and broadcasts zero commands via Bluetooth to immediately silence the test bench.
+     */
+    fun resetAllValuesToZero() {
+        _uiState.update {
+            it.copy(
+                rpm = 0,
+                railPressure = 0,
+                ectTemp = 0,
+                vehicleSpeed = 0,
+                accelerator = 0,
+                boostMapKpa = 0,
+                mafGramsSec = 0,
+                isSignalRunning = false,
+                statusBannerMessage = "RESET COMPLETED: ALL VALUES SET TO 0"
+            )
+        }
+        if (bluetoothController.packetMode.value == SerialPacketMode.KeyValueCommands) {
+            bluetoothController.sendStopCommand()
+            bluetoothController.sendRpmCommand(0)
+            bluetoothController.sendRailCommand(0)
+            bluetoothController.sendEctCommand(0)
+            bluetoothController.sendSpeedCommand(0)
+            bluetoothController.sendAccelCommand(0)
+            bluetoothController.sendMapCommand(0)
+            bluetoothController.sendMafCommand(0)
+        } else {
+            transmitCurrentFrame()
+        }
     }
 
     fun setBrandFilter(brand: String) {
