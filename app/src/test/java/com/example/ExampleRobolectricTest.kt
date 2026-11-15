@@ -3,6 +3,8 @@ package com.example
 import android.app.Application
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.example.data.ObdFaultCatalog
+import com.example.data.ObdFaultCode
 import com.example.data.StimulableSensor
 import com.example.data.VehicleCatalog
 import com.example.data.VehicleCategoryType
@@ -111,5 +113,42 @@ class ExampleRobolectricTest {
     assertEquals(3, vm.uiState.value.ecuPickedSensors.size)
     assertTrue(StimulableSensor.AIR_MASS in vm.uiState.value.ecuPickedSensors)
     assertEquals(null, vm.uiState.value.statusBannerMessage)
+  }
+
+  @Test
+  fun `obd fault generator injects sensor faults evaluates ecu response and clears dtcs`() {
+    val app = ApplicationProvider.getApplicationContext<Application>()
+    val vm = EcuLabViewModel(app)
+
+    // Inject Rail Pressure Too Low fault (P0087)
+    vm.toggleObdFault(ObdFaultCode.P0087_RAIL_TOO_LOW)
+    assertTrue(ObdFaultCode.P0087_RAIL_TOO_LOW in vm.uiState.value.activeObdFaults)
+    assertEquals(80, vm.uiState.value.railPressure)
+    assertTrue(StimulableSensor.RAIL_PRESSURE in vm.uiState.value.ecuPickedSensors)
+
+    // Inject ECT Circuit Low overheat fault (P0117) and verify ECU response summary
+    vm.toggleObdFault(ObdFaultCode.P0117_ECT_CIRCUIT_LOW)
+    assertEquals(125, vm.uiState.value.ectTemp)
+    assertTrue(StimulableSensor.COOLANT_TEMP in vm.uiState.value.ecuPickedSensors)
+
+    val response = ObdFaultCatalog.evaluateEcuResponse(vm.uiState.value.activeObdFaults)
+    assertTrue(response.milLampOn)
+    assertTrue(response.limpModeActive)
+    assertTrue(response.coolingFanForced)
+
+    // Inject Cam Sync fault (P0340) disables cam sync
+    vm.toggleObdFault(ObdFaultCode.P0340_CAM_SYNC_FAULT)
+    assertFalse(vm.uiState.value.camSyncEnabled)
+
+    // Generate random fault adds another active DTC
+    val countBeforeRandom = vm.uiState.value.activeObdFaults.size
+    vm.generateRandomObdFault()
+    assertTrue(vm.uiState.value.activeObdFaults.size >= countBeforeRandom)
+
+    // Clear all DTCs resets MIL and restores vehicle baseline values
+    vm.clearAllObdFaults()
+    assertTrue(vm.uiState.value.activeObdFaults.isEmpty())
+    assertTrue(vm.uiState.value.camSyncEnabled)
+    assertFalse(ObdFaultCatalog.evaluateEcuResponse(vm.uiState.value.activeObdFaults).milLampOn)
   }
 }

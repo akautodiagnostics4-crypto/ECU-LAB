@@ -11,6 +11,8 @@ import com.example.bluetooth.SerialPacketMode
 import com.example.data.EcuLabDatabase
 import com.example.data.EcuPresetEntity
 import com.example.data.EcuPresetRepository
+import com.example.data.ObdFaultCatalog
+import com.example.data.ObdFaultCode
 import com.example.data.StimulableSensor
 import com.example.data.StimulationHistoryEntity
 import com.example.data.StimulationHistoryRepository
@@ -91,6 +93,9 @@ data class EcuControlUiState(
     val camSyncEnabled: Boolean = true,
     val injectorPulseEnabled: Boolean = true,
     val accentTheme: AccentColorTheme = AccentColorTheme.CyberBlue,
+    val activeObdFaults: Set<ObdFaultCode> = emptySet(),
+    val obdFaultEventLog: List<String> = emptyList(),
+    val showObdFaultSheet: Boolean = false,
     val showSaveDialog: Boolean = false,
     val showBtQuickSheet: Boolean = false,
     val showBtConnectFirstDialog: Boolean = false,
@@ -278,7 +283,8 @@ class EcuLabViewModel(application: Application) : AndroidViewModel(application) 
                 boostMapKpa = vehicle.defaultBoostMap.coerceIn(MAP_MIN, MAP_MAX),
                 mafGramsSec = vehicle.defaultMaf.coerceIn(MAF_MIN, MAF_MAX),
                 camSyncEnabled = vehicle.defaultCamSync,
-                injectorPulseEnabled = vehicle.defaultInjectorPulse
+                injectorPulseEnabled = vehicle.defaultInjectorPulse,
+                activeObdFaults = emptySet()
             )
         }
         navigateTo(AppRoute.EcuCrankingSetup)
@@ -313,6 +319,168 @@ class EcuLabViewModel(application: Application) : AndroidViewModel(application) 
 
     fun proceedToEcuStartPage() {
         navigateTo(AppRoute.EcuRunPage)
+    }
+
+    fun setShowObdFaultSheet(show: Boolean) {
+        _uiState.update { it.copy(showObdFaultSheet = show) }
+    }
+
+    /**
+     * Injects or clears an individual OBD-II sensor/cranking fault inside ECU Stimulation mode.
+     * When injected, applies the corresponding simulated sensor failure value and notifies connected hardware.
+     */
+    fun toggleObdFault(fault: ObdFaultCode) {
+        val current = _uiState.value
+        val nextFaults = current.activeObdFaults.toMutableSet()
+        if (fault in nextFaults) {
+            nextFaults.remove(fault)
+            val restored = restoreBaselineForClearedFault(current, fault)
+            val logLine = "CLEARED ${fault.code} (${fault.title})"
+            _uiState.update {
+                restored.copy(
+                    activeObdFaults = nextFaults,
+                    obdFaultEventLog = (listOf(logLine) + it.obdFaultEventLog).take(12),
+                    statusBannerMessage = "DTC Cleared: ${fault.code}"
+                )
+            }
+            if (nextFaults.isEmpty() && bluetoothController.connectionState.value is BtConnectionState.Connected) {
+                bluetoothController.sendObdFaultClearCommand()
+            }
+        } else {
+            nextFaults.add(fault)
+            val faultedState = applyFaultConditionsToState(current, fault)
+            val logLine = "INJECTED ${fault.code} — ${fault.faultConditionSummary}"
+            _uiState.update {
+                faultedState.copy(
+                    activeObdFaults = nextFaults,
+                    obdFaultEventLog = (listOf(logLine) + it.obdFaultEventLog).take(12),
+                    statusBannerMessage = "Fault Injected: ${fault.code} (MIL ON)"
+                )
+            }
+            if (bluetoothController.connectionState.value is BtConnectionState.Connected) {
+                bluetoothController.sendObdFaultInjectCommand(fault.code)
+            }
+        }
+
+        if (_uiState.value.isSignalRunning && bluetoothController.connectionState.value is BtConnectionState.Connected) {
+            transmitEcuFrame()
+        }
+    }
+
+    fun generateRandomObdFault() {
+        val candidate = ObdFaultCatalog.pickRandomCandidate(_uiState.value.activeObdFaults)
+        if (candidate in _uiState.value.activeObdFaults) {
+            val faultedState = applyFaultConditionsToState(_uiState.value, candidate)
+            _uiState.update {
+                faultedState.copy(
+                    statusBannerMessage = "Fault Active: ${candidate.code} — ${candidate.title}"
+                )
+            }
+            if (_uiState.value.isSignalRunning && bluetoothController.connectionState.value is BtConnectionState.Connected) {
+                transmitEcuFrame()
+            }
+        } else {
+            toggleObdFault(candidate)
+        }
+    }
+
+    fun clearAllObdFaults() {
+        val current = _uiState.value
+        val v = current.selectedVehicle
+        val mode = current.selectedCrankingMode
+        val restoredRpm = if (mode == CrankingModePreset.CUSTOM) v.defaultRpm else mode.rpm
+        val restoredRail = if (mode == CrankingModePreset.CUSTOM) v.defaultRail else mode.railBar
+
+        _uiState.update {
+            it.copy(
+                activeObdFaults = emptySet(),
+                rpm = restoredRpm.coerceIn(RPM_MIN, RPM_MAX),
+                railPressure = restoredRail.coerceIn(RAIL_MIN, RAIL_MAX),
+                ectTemp = v.defaultEct.coerceIn(ECT_MIN, ECT_MAX),
+                vehicleSpeed = v.defaultSpeed.coerceIn(SPEED_MIN, SPEED_MAX),
+                boostMapKpa = v.defaultBoostMap.coerceIn(MAP_MIN, MAP_MAX),
+                mafGramsSec = v.defaultMaf.coerceIn(MAF_MIN, MAF_MAX),
+                camSyncEnabled = v.defaultCamSync,
+                obdFaultEventLog = (listOf("ALL DTC CLEARED — MIL OFF") + it.obdFaultEventLog).take(12),
+                statusBannerMessage = "All OBD-II DTCs Cleared — Baseline Restored"
+            )
+        }
+        if (bluetoothController.connectionState.value is BtConnectionState.Connected) {
+            bluetoothController.sendObdFaultClearCommand()
+            if (_uiState.value.isSignalRunning) {
+                transmitEcuFrame()
+            }
+        }
+    }
+
+    private fun applyFaultConditionsToState(
+        state: EcuControlUiState,
+        fault: ObdFaultCode
+    ): EcuControlUiState {
+        val picked = state.ecuPickedSensors.toMutableSet()
+        fault.targetSensor?.let { picked.add(it) }
+
+        val nextRpm = fault.simulatedRpmOverride?.coerceIn(RPM_MIN, RPM_MAX) ?: state.rpm
+        val nextCamSync = if (fault.disablesCamSync) false else state.camSyncEnabled
+
+        val sensorVal = fault.simulatedSensorValue
+        return when (fault.targetSensor) {
+            StimulableSensor.RAIL_PRESSURE -> state.copy(
+                ecuPickedSensors = picked,
+                railPressure = (sensorVal ?: state.railPressure).coerceIn(RAIL_MIN, RAIL_MAX),
+                selectedCrankingMode = CrankingModePreset.CUSTOM
+            )
+            StimulableSensor.COOLANT_TEMP -> state.copy(
+                ecuPickedSensors = picked,
+                ectTemp = (sensorVal ?: state.ectTemp).coerceIn(ECT_MIN, ECT_MAX)
+            )
+            StimulableSensor.VEHICLE_SPEED -> state.copy(
+                ecuPickedSensors = picked,
+                vehicleSpeed = (sensorVal ?: state.vehicleSpeed).coerceIn(SPEED_MIN, SPEED_MAX)
+            )
+            StimulableSensor.BOOST_PRESSURE -> state.copy(
+                ecuPickedSensors = picked,
+                boostMapKpa = (sensorVal ?: state.boostMapKpa).coerceIn(MAP_MIN, MAP_MAX)
+            )
+            StimulableSensor.AIR_MASS -> state.copy(
+                ecuPickedSensors = picked,
+                mafGramsSec = (sensorVal ?: state.mafGramsSec).coerceIn(MAF_MIN, MAF_MAX)
+            )
+            null -> state.copy(
+                ecuPickedSensors = picked,
+                rpm = nextRpm,
+                camSyncEnabled = nextCamSync,
+                selectedCrankingMode = if (fault.simulatedRpmOverride != null) CrankingModePreset.CUSTOM else state.selectedCrankingMode
+            )
+        }
+    }
+
+    private fun restoreBaselineForClearedFault(
+        state: EcuControlUiState,
+        fault: ObdFaultCode
+    ): EcuControlUiState {
+        val v = state.selectedVehicle
+        return when (fault.targetSensor) {
+            StimulableSensor.RAIL_PRESSURE -> state.copy(
+                railPressure = v.defaultRail.coerceIn(RAIL_MIN, RAIL_MAX)
+            )
+            StimulableSensor.COOLANT_TEMP -> state.copy(
+                ectTemp = v.defaultEct.coerceIn(ECT_MIN, ECT_MAX)
+            )
+            StimulableSensor.VEHICLE_SPEED -> state.copy(
+                vehicleSpeed = v.defaultSpeed.coerceIn(SPEED_MIN, SPEED_MAX)
+            )
+            StimulableSensor.BOOST_PRESSURE -> state.copy(
+                boostMapKpa = v.defaultBoostMap.coerceIn(MAP_MIN, MAP_MAX)
+            )
+            StimulableSensor.AIR_MASS -> state.copy(
+                mafGramsSec = v.defaultMaf.coerceIn(MAF_MIN, MAF_MAX)
+            )
+            null -> state.copy(
+                rpm = if (fault.simulatedRpmOverride != null) v.defaultRpm.coerceIn(RPM_MIN, RPM_MAX) else state.rpm,
+                camSyncEnabled = if (fault.disablesCamSync) v.defaultCamSync else state.camSyncEnabled
+            )
+        }
     }
 
     /**
@@ -557,6 +725,7 @@ class EcuLabViewModel(application: Application) : AndroidViewModel(application) 
                 accelerator = 0,
                 boostMapKpa = 0,
                 mafGramsSec = 0,
+                activeObdFaults = emptySet(),
                 isSignalRunning = false,
                 isSensorStimulationRunning = false,
                 statusBannerMessage = "RESET COMPLETED: ALL VALUES SET TO 0"
@@ -564,6 +733,7 @@ class EcuLabViewModel(application: Application) : AndroidViewModel(application) 
         }
         if (bluetoothController.connectionState.value is BtConnectionState.Connected) {
             bluetoothController.sendStopCommand()
+            bluetoothController.sendObdFaultClearCommand()
             bluetoothController.sendRpmCommand(0)
             bluetoothController.sendRailCommand(0)
             bluetoothController.sendEctCommand(0)
@@ -692,12 +862,17 @@ class EcuLabViewModel(application: Application) : AndroidViewModel(application) 
                 "${sensor.shortLabel}: ${getSensorValue(sensor)} ${sensor.unit}"
             }
         }
+        val dtcSuffix = if (s.activeObdFaults.isNotEmpty()) {
+            " • DTC: ${s.activeObdFaults.joinToString(",") { it.code }}"
+        } else {
+            ""
+        }
         viewModelScope.launch {
             historyRepository.addEntry(
                 StimulationHistoryEntity(
                     modeType = "ECU STIMULATION",
                     vehicleLabel = "${s.selectedVehicle.brand} ${s.selectedVehicle.modelName}",
-                    summary = "${s.selectedCrankingMode.title} • ${s.rpm} RPM • ${s.railPressure} bar • $pickedSummary",
+                    summary = "${s.selectedCrankingMode.title} • ${s.rpm} RPM • ${s.railPressure} bar • $pickedSummary$dtcSuffix",
                     rpm = s.rpm,
                     railPressure = s.railPressure,
                     sensorCount = s.ecuPickedSensors.size

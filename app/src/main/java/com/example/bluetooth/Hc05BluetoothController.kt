@@ -603,6 +603,16 @@ class Hc05BluetoothController(private val context: Context) {
         sendLineToBt(wireLine = cleaned, displayLabel = "$cleaned\\n")
     }
 
+    fun sendObdFaultInjectCommand(dtcCode: String) {
+        val cleaned = dtcCode.trim().uppercase()
+        if (cleaned.isEmpty()) return
+        sendLineToBt(wireLine = "DTC_INJ=$cleaned", displayLabel = "DTC_INJ=$cleaned\\n")
+    }
+
+    fun sendObdFaultClearCommand() {
+        sendLineToBt(wireLine = "DTC_CLR=1", displayLabel = "DTC_CLR=1\\n")
+    }
+
     private fun sendLineToBt(wireLine: String, displayLabel: String) {
         val payload = "$wireLine\n"
         scope.launch {

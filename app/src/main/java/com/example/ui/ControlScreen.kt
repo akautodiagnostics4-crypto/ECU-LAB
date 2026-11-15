@@ -66,6 +66,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.bluetooth.BtConnectionState
+import com.example.data.ObdFaultCode
 import com.example.data.StimulableSensor
 import com.example.ui.theme.BorderSubtle
 import com.example.ui.theme.BrushedMetalBottom
@@ -125,6 +126,9 @@ fun EcuCrankingSetupScreen(
     onCamSyncToggle: (Boolean) -> Unit,
     onToggleSensorPick: (StimulableSensor) -> Unit,
     onSensorValueChange: (StimulableSensor, Int) -> Unit,
+    onToggleObdFault: (ObdFaultCode) -> Unit,
+    onGenerateRandomObdFault: () -> Unit,
+    onClearAllObdFaults: () -> Unit,
     onProceedToStartPage: () -> Unit,
     onResetAllToZero: () -> Unit,
     onTapSavePreset: () -> Unit,
@@ -400,6 +404,18 @@ fun EcuCrankingSetupScreen(
                         onValueChange = { onSensorValueChange(sensor, it) }
                     )
                 }
+
+                // Simulated OBD-II Diagnostic Fault Code Generator
+                item {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    ObdFaultSetupSection(
+                        activeFaults = uiState.activeObdFaults,
+                        eventLog = uiState.obdFaultEventLog,
+                        onToggleFault = onToggleObdFault,
+                        onGenerateRandomFault = onGenerateRandomObdFault,
+                        onClearAllFaults = onClearAllObdFaults
+                    )
+                }
             }
 
             // Bottom Footer: RESET (0) + CONTINUE TO START
@@ -458,6 +474,9 @@ fun EcuRunOnlyScreen(
     btState: BtConnectionState,
     onBack: () -> Unit,
     onOpenBluetoothSheet: () -> Unit,
+    onOpenObdFaultSheet: () -> Unit,
+    onGenerateRandomObdFault: () -> Unit,
+    onClearAllObdFaults: () -> Unit,
     onToggleStartStop: () -> Unit,
     onResetAllToZero: () -> Unit
 ) {
@@ -591,7 +610,16 @@ fun EcuRunOnlyScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(26.dp))
+                Spacer(modifier = Modifier.height(14.dp))
+
+                ObdFaultRunStrip(
+                    activeFaults = uiState.activeObdFaults,
+                    onOpenFaultSheet = onOpenObdFaultSheet,
+                    onGenerateRandomFault = onGenerateRandomObdFault,
+                    onClearAllFaults = onClearAllObdFaults
+                )
+
+                Spacer(modifier = Modifier.height(18.dp))
 
                 // Primary Page Control: ONLY Start / Stop Button
                 GlossyActionButton(
@@ -606,7 +634,7 @@ fun EcuRunOnlyScreen(
                     onClick = onToggleStartStop
                 )
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 ResetZeroButton(
                     onClick = onResetAllToZero,

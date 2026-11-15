@@ -62,6 +62,7 @@ import com.example.ui.HomeScreen
 import com.example.ui.LcvBrandsScreen
 import com.example.ui.LcvVehiclesScreen
 import com.example.ui.LogoSplashScreen
+import com.example.ui.ObdFaultInjectorBottomSheet
 import com.example.ui.SavedPresetsScreen
 import com.example.ui.SensorStimulationScreen
 import com.example.ui.SettingsScreen
@@ -220,6 +221,9 @@ fun AkEcuStimulatorApp(
                                     onCamSyncToggle = { viewModel.toggleCamSync(it) },
                                     onToggleSensorPick = { viewModel.toggleEcuPickedSensor(it) },
                                     onSensorValueChange = { sensor, v -> viewModel.updateSensorValue(sensor, v) },
+                                    onToggleObdFault = { viewModel.toggleObdFault(it) },
+                                    onGenerateRandomObdFault = { viewModel.generateRandomObdFault() },
+                                    onClearAllObdFaults = { viewModel.clearAllObdFaults() },
                                     onProceedToStartPage = { viewModel.proceedToEcuStartPage() },
                                     onResetAllToZero = { viewModel.resetAllValuesToZero() },
                                     onTapSavePreset = { viewModel.openSavePresetDialog() },
@@ -234,6 +238,9 @@ fun AkEcuStimulatorApp(
                                     btState = btState,
                                     onBack = { viewModel.navigateBack() },
                                     onOpenBluetoothSheet = { viewModel.setShowBtQuickSheet(true) },
+                                    onOpenObdFaultSheet = { viewModel.setShowObdFaultSheet(true) },
+                                    onGenerateRandomObdFault = { viewModel.generateRandomObdFault() },
+                                    onClearAllObdFaults = { viewModel.clearAllObdFaults() },
                                     onToggleStartStop = { viewModel.toggleEcuStartStop() },
                                     onResetAllToZero = { viewModel.resetAllValuesToZero() }
                                 )
@@ -346,6 +353,16 @@ fun AkEcuStimulatorApp(
                                 viewModel.setShowBtQuickSheet(false)
                                 viewModel.navigateTo(AppRoute.BluetoothDevices)
                             }
+                        )
+                    }
+
+                    if (uiState.showObdFaultSheet) {
+                        ObdFaultInjectorBottomSheet(
+                            activeFaults = uiState.activeObdFaults,
+                            onToggleFault = { viewModel.toggleObdFault(it) },
+                            onGenerateRandomFault = { viewModel.generateRandomObdFault() },
+                            onClearAllFaults = { viewModel.clearAllObdFaults() },
+                            onDismiss = { viewModel.setShowObdFaultSheet(false) }
                         )
                     }
 
