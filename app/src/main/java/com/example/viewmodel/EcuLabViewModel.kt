@@ -1,9 +1,6 @@
 package com.example.viewmodel
 
 import android.app.Application
-import android.content.Context
-import android.os.Build
-import android.provider.Settings
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.room.Room
@@ -14,10 +11,12 @@ import com.example.bluetooth.SerialPacketMode
 import com.example.data.EcuLabDatabase
 import com.example.data.EcuPresetEntity
 import com.example.data.EcuPresetRepository
+import com.example.data.StimulableSensor
+import com.example.data.StimulationHistoryEntity
+import com.example.data.StimulationHistoryRepository
 import com.example.data.VehicleCatalog
+import com.example.data.VehicleCategoryType
 import com.example.data.VehicleModel
-import java.security.MessageDigest
-import java.util.UUID
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -33,11 +32,32 @@ enum class BootStage {
     Ready
 }
 
-enum class EcuLabTab {
-    Control,
-    Vehicles,
-    Saved,
-    Device
+enum class AppRoute {
+    Home,
+    EcuCategories,
+    ComingSoonBrands,
+    LcvBrands,
+    LcvVehicles,
+    EcuCrankingSetup,
+    EcuRunPage,
+    SensorStimulation,
+    BluetoothDevices,
+    SavedPresets,
+    StimulationHistory,
+    ContactInfo,
+    Settings
+}
+
+enum class CrankingModePreset(
+    val id: String,
+    val title: String,
+    val rpm: Int,
+    val railBar: Int
+) {
+    MODE_1("mode1", "MODE 1", 300, 250),
+    MODE_2("mode2", "MODE 2", 700, 350),
+    MODE_3("mode3", "MODE 3", 1200, 600),
+    CUSTOM("custom", "CUSTOM", 800, 350)
 }
 
 enum class AccentColorTheme(val label: String) {
@@ -49,27 +69,31 @@ enum class AccentColorTheme(val label: String) {
 
 data class EcuControlUiState(
     val bootStage: BootStage = BootStage.LogoSplash,
-    val isActivated: Boolean = false,
-    val deviceId: String = "",
-    val activationError: String? = null,
-    val showAdminKeyGeneratorDialog: Boolean = false,
-    val activeTab: EcuLabTab = EcuLabTab.Vehicles, // Opens directly to All Vehicle List after boot & activation!
+    val currentRoute: AppRoute = AppRoute.Home,
+    val selectedCategory: VehicleCategoryType = VehicleCategoryType.LCV,
+    val selectedLcvBrand: String = "TATA",
     val selectedVehicle: VehicleModel = VehicleCatalog.allVehicles.first(),
-    val selectedBrandFilter: String = "ALL",
-    val searchQuery: String = "",
+    val selectedCrankingMode: CrankingModePreset = CrankingModePreset.MODE_1,
+    val ecuPickedSensors: Set<StimulableSensor> = setOf(StimulableSensor.RAIL_PRESSURE),
+    val sensorStimulationTicked: Set<StimulableSensor> = setOf(
+        StimulableSensor.RAIL_PRESSURE,
+        StimulableSensor.COOLANT_TEMP
+    ),
     val isSignalRunning: Boolean = false,
-    val rpm: Int = 800,                    // Range: 200 to 2500 rpm
-    val railPressure: Int = 300,           // Range: 0 to 1200 bar
-    val ectTemp: Int = 85,                 // Range: 0 to 125 °C (Engine Coolant Temp)
-    val vehicleSpeed: Int = 0,             // Range: 0 to 220 km/h
-    val accelerator: Int = 0,              // Range: 0 to 100 %
-    val boostMapKpa: Int = 105,            // Range: 100 to 300 kPa (Boost / MAP sensor)
-    val mafGramsSec: Int = 18,             // Range: 0 to 500 g/s (MAF Air Flow sensor)
-    val camSyncEnabled: Boolean = true,    // Camshaft CMP Sync pulse output ON/OFF
-    val injectorPulseEnabled: Boolean = true, // Injector Load Feedback pulse ON/OFF
+    val isSensorStimulationRunning: Boolean = false,
+    val rpm: Int = CrankingModePreset.MODE_1.rpm,           // 200 to 2500 rpm (0 on reset)
+    val railPressure: Int = CrankingModePreset.MODE_1.railBar, // 0 to 1200 bar
+    val ectTemp: Int = 88,                                  // 0 to 125 °C
+    val vehicleSpeed: Int = 40,                             // 0 to 220 km/h
+    val accelerator: Int = 0,                               // 0 to 100 %
+    val boostMapKpa: Int = 130,                             // 100 to 300 kPa
+    val mafGramsSec: Int = 35,                              // 0 to 500 g/s
+    val camSyncEnabled: Boolean = true,
+    val injectorPulseEnabled: Boolean = true,
     val accentTheme: AccentColorTheme = AccentColorTheme.CyberBlue,
     val showSaveDialog: Boolean = false,
     val showBtQuickSheet: Boolean = false,
+    val showBtConnectFirstDialog: Boolean = false,
     val statusBannerMessage: String? = null
 )
 
@@ -96,58 +120,28 @@ class EcuLabViewModel(application: Application) : AndroidViewModel(application) 
 
         const val MAF_MIN = 0
         const val MAF_MAX = 500
-
-        private const val PREFS_NAME = "ecu_lab_license_prefs"
-        private const val KEY_IS_ACTIVATED = "is_device_activated"
-        private const val KEY_SAVED_UNLOCK_CODE = "saved_unlock_code"
-        private const val KEY_FALLBACK_DEVICE_SEED = "fallback_device_seed"
-
-        private const val LICENSE_SECRET_SALT = "AK_AUTO_DIAGNOSTICS_ECU_LAB_2026_9791"
-        const val ADMIN_MASTER_PIN = "9791"
-        private const val MASTER_OVERRIDE_KEY = "AK-MASTER-9791"
-
-        /**
-         * Deterministically generates a 12-character Activation Key (`XXXX-XXXX-XXXX`)
-         * for any customer's `Device ID` (e.g., `AK-7F39-C812`).
-         */
-        fun generateUnlockKeyForDeviceId(rawDeviceId: String): String {
-            val normalizedId = rawDeviceId.trim().uppercase()
-                .replace(" ", "")
-            if (normalizedId.isEmpty()) return ""
-
-            val input = "$normalizedId|$LICENSE_SECRET_SALT"
-            val digest = MessageDigest.getInstance("SHA-256").digest(input.toByteArray(Charsets.UTF_8))
-            val alphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ" // Unambiguous uppercase alphanumeric
-            val chars = CharArray(12) { idx ->
-                val byteVal = digest[idx].toInt() and 0xFF
-                alphabet[byteVal % alphabet.length]
-            }
-            val raw = String(chars)
-            return "${raw.substring(0, 4)}-${raw.substring(4, 8)}-${raw.substring(8, 12)}"
-        }
     }
-
-    private val licensePrefs = application.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    private val currentDeviceId: String = resolveHardwareDeviceId(application)
 
     private val database: EcuLabDatabase = Room.databaseBuilder(
         application,
         EcuLabDatabase::class.java,
         "ecu_lab_db"
-    ).fallbackToDestructiveMigration(false).build()
+    ).fallbackToDestructiveMigration(true).build()
 
     private val repository = EcuPresetRepository(database.ecuPresetDao())
+    private val historyRepository = StimulationHistoryRepository(database.stimulationHistoryDao())
     val bluetoothController = Hc05BluetoothController(application)
 
-    private val _uiState = MutableStateFlow(
-        EcuControlUiState(
-            isActivated = checkDeviceActivationStatus(),
-            deviceId = currentDeviceId
-        )
-    )
+    private val _uiState = MutableStateFlow(EcuControlUiState())
     val uiState: StateFlow<EcuControlUiState> = _uiState.asStateFlow()
 
     val savedPresets: StateFlow<List<EcuPresetEntity>> = repository.allPresets.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList()
+    )
+
+    val stimulationHistory: StateFlow<List<StimulationHistoryEntity>> = historyRepository.allHistory.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyList()
@@ -164,236 +158,395 @@ class EcuLabViewModel(application: Application) : AndroidViewModel(application) 
     val packetsReceivedCount: StateFlow<Int> = bluetoothController.packetsReceivedCount
     val lastArduinoAck: StateFlow<String?> = bluetoothController.lastArduinoAck
 
+    private val routeHistory = ArrayDeque<AppRoute>()
+
     init {
         runBootSequence()
+        observeBluetoothDisconnectSafety()
     }
 
     private fun runBootSequence() {
         viewModelScope.launch {
             _uiState.update { it.copy(bootStage = BootStage.LogoSplash) }
-            delay(3000L) // AFTER 3 SEC
+            delay(2000L)
             _uiState.update { it.copy(bootStage = BootStage.BootLoading) }
-            delay(2000L) // BOOT LOADING... AFTER 2 SECOND
+            bluetoothController.attemptAutoConnect()
+            delay(1500L)
             _uiState.update {
                 it.copy(
                     bootStage = BootStage.Ready,
-                    activeTab = EcuLabTab.Vehicles // ALL VEHICLE LIST APPEAR ON THE SCREEN
+                    currentRoute = AppRoute.Home
                 )
             }
+            bluetoothController.attemptAutoConnect()
         }
-    }
-
-    fun skipBootForTest() {
-        _uiState.update {
-            it.copy(
-                bootStage = BootStage.Ready,
-                isActivated = true,
-                activeTab = EcuLabTab.Vehicles
-            )
-        }
-    }
-
-    private fun resolveHardwareDeviceId(context: Context): String {
-        val androidId = try {
-            Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
-        } catch (_: Exception) {
-            null
-        }
-        val seed = if (!androidId.isNullOrBlank() && androidId != "9774d56d682e549c") {
-            "$androidId|${Build.BOARD}|${Build.MODEL}"
-        } else {
-            var stored = licensePrefs.getString(KEY_FALLBACK_DEVICE_SEED, null)
-            if (stored == null) {
-                stored = UUID.randomUUID().toString()
-                licensePrefs.edit().putString(KEY_FALLBACK_DEVICE_SEED, stored).apply()
-            }
-            stored
-        }
-        val digest = MessageDigest.getInstance("SHA-256").digest(seed.toByteArray(Charsets.UTF_8))
-        val hex = digest.take(4).joinToString("") { "%02X".format(it) }
-        return "AK-${hex.substring(0, 4)}-${hex.substring(4, 8)}"
-    }
-
-    private fun checkDeviceActivationStatus(): Boolean {
-        val isFlagSet = licensePrefs.getBoolean(KEY_IS_ACTIVATED, false)
-        val savedCode = licensePrefs.getString(KEY_SAVED_UNLOCK_CODE, "") ?: ""
-        if (!isFlagSet || savedCode.isEmpty()) return false
-        val expectedKey = generateUnlockKeyForDeviceId(currentDeviceId)
-        return normalizeKey(savedCode) == normalizeKey(expectedKey) ||
-            normalizeKey(savedCode) == normalizeKey(MASTER_OVERRIDE_KEY)
-    }
-
-    private fun normalizeKey(key: String): String {
-        return key.trim().uppercase().replace("-", "").replace(" ", "")
-    }
-
-    fun activateDevice(enteredKey: String) {
-        val cleanEntered = normalizeKey(enteredKey)
-        val expectedKey = generateUnlockKeyForDeviceId(currentDeviceId)
-        val cleanExpected = normalizeKey(expectedKey)
-        val cleanMaster = normalizeKey(MASTER_OVERRIDE_KEY)
-
-        if (cleanEntered.isNotEmpty() && (cleanEntered == cleanExpected || cleanEntered == cleanMaster)) {
-            licensePrefs.edit()
-                .putBoolean(KEY_IS_ACTIVATED, true)
-                .putString(KEY_SAVED_UNLOCK_CODE, expectedKey)
-                .apply()
-
-            _uiState.update {
-                it.copy(
-                    isActivated = true,
-                    activationError = null,
-                    activeTab = EcuLabTab.Vehicles,
-                    statusBannerMessage = "ECU LAB Permanently Activated on Device $currentDeviceId"
-                )
-            }
-        } else {
-            _uiState.update {
-                it.copy(
-                    activationError = "Invalid Activation Key for Device ID $currentDeviceId"
-                )
-            }
-        }
-    }
-
-    fun clearActivationError() {
-        _uiState.update { it.copy(activationError = null) }
-    }
-
-    fun setShowAdminKeyGeneratorDialog(show: Boolean) {
-        _uiState.update { it.copy(showAdminKeyGeneratorDialog = show) }
-    }
-
-    fun verifyAdminPin(pin: String): Boolean {
-        return pin.trim() == ADMIN_MASTER_PIN
-    }
-
-    fun unlockCurrentDeviceAsAdmin() {
-        val expectedKey = generateUnlockKeyForDeviceId(currentDeviceId)
-        licensePrefs.edit()
-            .putBoolean(KEY_IS_ACTIVATED, true)
-            .putString(KEY_SAVED_UNLOCK_CODE, expectedKey)
-            .apply()
-        _uiState.update {
-            it.copy(
-                isActivated = true,
-                showAdminKeyGeneratorDialog = false,
-                activationError = null,
-                activeTab = EcuLabTab.Vehicles,
-                statusBannerMessage = "Device permanently unlocked via Admin Key Generator"
-            )
-        }
-    }
-
-    fun selectTab(tab: EcuLabTab) {
-        _uiState.update { it.copy(activeTab = tab) }
-        if (tab == EcuLabTab.Device) {
-            bluetoothController.refreshPairedDevices()
-        }
-    }
-
-    fun setShowBtQuickSheet(show: Boolean) {
-        if (show) {
-            bluetoothController.refreshPairedDevices()
-        }
-        _uiState.update { it.copy(showBtQuickSheet = show) }
-    }
-
-    fun setAccentTheme(theme: AccentColorTheme) {
-        _uiState.update { it.copy(accentTheme = theme) }
-    }
-
-    fun selectVehicle(vehicle: VehicleModel) {
-        val safeRpm = vehicle.defaultRpm.coerceIn(RPM_MIN, RPM_MAX)
-        val safeRail = vehicle.defaultRail.coerceIn(RAIL_MIN, RAIL_MAX)
-        val safeEct = vehicle.defaultEct.coerceIn(ECT_MIN, ECT_MAX)
-        val safeSpeed = vehicle.defaultSpeed.coerceIn(SPEED_MIN, SPEED_MAX)
-        val safeAccel = vehicle.defaultAccel.coerceIn(ACCEL_MIN, ACCEL_MAX)
-        val safeMap = vehicle.defaultBoostMap.coerceIn(MAP_MIN, MAP_MAX)
-        val safeMaf = vehicle.defaultMaf.coerceIn(MAF_MIN, MAF_MAX)
-
-        _uiState.update {
-            it.copy(
-                selectedVehicle = vehicle,
-                rpm = safeRpm,
-                railPressure = safeRail,
-                ectTemp = safeEct,
-                vehicleSpeed = safeSpeed,
-                accelerator = safeAccel,
-                boostMapKpa = safeMap,
-                mafGramsSec = safeMaf,
-                camSyncEnabled = vehicle.defaultCamSync,
-                injectorPulseEnabled = vehicle.defaultInjectorPulse,
-                activeTab = EcuLabTab.Control,
-                statusBannerMessage = "${vehicle.brand} ${vehicle.modelName} loaded"
-            )
-        }
-        transmitCurrentFrame()
-    }
-
-    fun applyQuickBenchMode(modeName: String) {
-        val v = _uiState.value.selectedVehicle
-        when (modeName) {
-            "CRANKING" -> _uiState.update {
-                it.copy(
-                    rpm = 250,
-                    railPressure = 220,
-                    ectTemp = 45,
-                    vehicleSpeed = 0,
-                    accelerator = 0,
-                    boostMapKpa = 100,
-                    mafGramsSec = 8,
-                    statusBannerMessage = "Applied Cranking Mode (250 RPM)"
-                )
-            }
-            "IDLE" -> _uiState.update {
-                it.copy(
-                    rpm = v.defaultRpm.coerceIn(RPM_MIN, RPM_MAX),
-                    railPressure = v.defaultRail.coerceIn(RAIL_MIN, RAIL_MAX),
-                    ectTemp = 88,
-                    vehicleSpeed = 0,
-                    accelerator = 0,
-                    boostMapKpa = v.defaultBoostMap.coerceIn(MAP_MIN, MAP_MAX),
-                    mafGramsSec = v.defaultMaf.coerceIn(MAF_MIN, MAF_MAX),
-                    statusBannerMessage = "Applied Warm Idle Mode (${v.defaultRpm} RPM)"
-                )
-            }
-            "CRUISE" -> _uiState.update {
-                it.copy(
-                    rpm = 1650,
-                    railPressure = 620,
-                    ectTemp = 92,
-                    vehicleSpeed = 75,
-                    accelerator = 35,
-                    boostMapKpa = 165,
-                    mafGramsSec = 95,
-                    statusBannerMessage = "Applied Highway Cruise Mode (1650 RPM)"
-                )
-            }
-            "FULL_LOAD" -> _uiState.update {
-                it.copy(
-                    rpm = 2400,
-                    railPressure = 950,
-                    ectTemp = 98,
-                    vehicleSpeed = 120,
-                    accelerator = 90,
-                    boostMapKpa = 245,
-                    mafGramsSec = 260,
-                    statusBannerMessage = "Applied Full Load / Boost Test (2400 RPM)"
-                )
-            }
-            "RESET_ZERO" -> {
-                resetAllValuesToZero()
-                return
-            }
-        }
-        transmitCurrentFrame()
     }
 
     /**
-     * Resets all signal generator values to 0, stops signal transmission,
-     * and broadcasts zero commands via Bluetooth to immediately silence the test bench.
+     * Strict safety requirement:
+     * "if Bluetooth disconnect cranking and stimulation should be stopped"
      */
+    private fun observeBluetoothDisconnectSafety() {
+        viewModelScope.launch {
+            var wasConnected = false
+            bluetoothController.connectionState.collect { btState ->
+                val isNowConnected = btState is BtConnectionState.Connected
+                if (wasConnected && !isNowConnected) {
+                    val hadRunning = _uiState.value.isSignalRunning || _uiState.value.isSensorStimulationRunning
+                    if (hadRunning) {
+                        _uiState.update {
+                            it.copy(
+                                isSignalRunning = false,
+                                isSensorStimulationRunning = false,
+                                statusBannerMessage = "Bluetooth disconnected — Cranking and stimulation stopped"
+                            )
+                        }
+                    }
+                }
+                wasConnected = isNowConnected
+            }
+        }
+    }
+
+    fun tryBluetoothAutoConnect() {
+        bluetoothController.attemptAutoConnect(forceRetry = true)
+    }
+
+    fun navigateTo(route: AppRoute) {
+        val current = _uiState.value.currentRoute
+        if (current != route) {
+            routeHistory.addLast(current)
+            _uiState.update { it.copy(currentRoute = route) }
+            if (route == AppRoute.BluetoothDevices || route == AppRoute.Home) {
+                bluetoothController.refreshPairedDevices()
+            }
+        }
+    }
+
+    fun navigateBack(): Boolean {
+        return if (routeHistory.isNotEmpty()) {
+            val prev = routeHistory.removeLast()
+            _uiState.update { it.copy(currentRoute = prev) }
+            true
+        } else if (_uiState.value.currentRoute != AppRoute.Home) {
+            _uiState.update { it.copy(currentRoute = AppRoute.Home) }
+            true
+        } else {
+            false
+        }
+    }
+
+    fun navigateHome() {
+        routeHistory.clear()
+        _uiState.update { it.copy(currentRoute = AppRoute.Home) }
+    }
+
+    fun openEcuStimulation() {
+        navigateTo(AppRoute.EcuCategories)
+    }
+
+    fun openSensorStimulation() {
+        // Ensure ECU cranking is stopped when entering Sensor-only stimulation
+        if (_uiState.value.isSignalRunning) {
+            stopEcuStimulationInternal()
+        }
+        navigateTo(AppRoute.SensorStimulation)
+    }
+
+    fun selectVehicleCategory(category: VehicleCategoryType) {
+        _uiState.update { it.copy(selectedCategory = category) }
+        if (category.isComingSoon) {
+            navigateTo(AppRoute.ComingSoonBrands)
+        } else {
+            navigateTo(AppRoute.LcvBrands)
+        }
+    }
+
+    fun selectLcvBrand(brand: String) {
+        _uiState.update { it.copy(selectedLcvBrand = brand) }
+        navigateTo(AppRoute.LcvVehicles)
+    }
+
+    fun selectLcvVehicle(vehicle: VehicleModel) {
+        _uiState.update {
+            it.copy(
+                selectedVehicle = vehicle,
+                selectedCrankingMode = CrankingModePreset.MODE_1,
+                rpm = CrankingModePreset.MODE_1.rpm,
+                railPressure = CrankingModePreset.MODE_1.railBar,
+                ectTemp = vehicle.defaultEct.coerceIn(ECT_MIN, ECT_MAX),
+                boostMapKpa = vehicle.defaultBoostMap.coerceIn(MAP_MIN, MAP_MAX),
+                mafGramsSec = vehicle.defaultMaf.coerceIn(MAF_MIN, MAF_MAX),
+                camSyncEnabled = vehicle.defaultCamSync,
+                injectorPulseEnabled = vehicle.defaultInjectorPulse
+            )
+        }
+        navigateTo(AppRoute.EcuCrankingSetup)
+    }
+
+    fun selectCrankingMode(mode: CrankingModePreset) {
+        _uiState.update {
+            if (mode == CrankingModePreset.CUSTOM) {
+                it.copy(selectedCrankingMode = CrankingModePreset.CUSTOM)
+            } else {
+                it.copy(
+                    selectedCrankingMode = mode,
+                    rpm = mode.rpm,
+                    railPressure = mode.railBar
+                )
+            }
+        }
+        if (_uiState.value.isSignalRunning) {
+            transmitEcuFrame()
+        }
+    }
+
+    fun toggleEcuPickedSensor(sensor: StimulableSensor) {
+        val current = _uiState.value.ecuPickedSensors.toMutableSet()
+        if (sensor in current) {
+            current.remove(sensor)
+        } else {
+            current.add(sensor)
+        }
+        _uiState.update { it.copy(ecuPickedSensors = current) }
+    }
+
+    fun proceedToEcuStartPage() {
+        navigateTo(AppRoute.EcuRunPage)
+    }
+
+    /**
+     * Toggle Tick button in Sensor Stimulation category (allows selecting any number of sensors).
+     */
+    fun toggleSensorStimulationTick(sensor: StimulableSensor) {
+        val current = _uiState.value.sensorStimulationTicked.toMutableSet()
+        if (sensor in current) {
+            current.remove(sensor)
+            _uiState.update { it.copy(sensorStimulationTicked = current) }
+            if (_uiState.value.isSensorStimulationRunning && current.isEmpty()) {
+                _uiState.update {
+                    it.copy(
+                        isSensorStimulationRunning = false,
+                        statusBannerMessage = "Select at least 1 sensor to stimulate"
+                    )
+                }
+                bluetoothController.sendStopCommand()
+            } else if (_uiState.value.isSensorStimulationRunning) {
+                transmitSensorOnlyFrame()
+            }
+        } else {
+            current.add(sensor)
+            _uiState.update { it.copy(sensorStimulationTicked = current) }
+            if (_uiState.value.isSensorStimulationRunning) {
+                transmitSensorOnlyFrame()
+            }
+        }
+    }
+
+    fun updateSensorValue(sensor: StimulableSensor, newVal: Int) {
+        when (sensor) {
+            StimulableSensor.RAIL_PRESSURE -> updateRailPressure(newVal)
+            StimulableSensor.COOLANT_TEMP -> updateEctTemp(newVal)
+            StimulableSensor.VEHICLE_SPEED -> updateVehicleSpeed(newVal)
+            StimulableSensor.BOOST_PRESSURE -> updateBoostMap(newVal)
+            StimulableSensor.AIR_MASS -> updateMaf(newVal)
+        }
+    }
+
+    fun getSensorValue(sensor: StimulableSensor): Int {
+        val s = _uiState.value
+        return when (sensor) {
+            StimulableSensor.RAIL_PRESSURE -> s.railPressure
+            StimulableSensor.COOLANT_TEMP -> s.ectTemp
+            StimulableSensor.VEHICLE_SPEED -> s.vehicleSpeed
+            StimulableSensor.BOOST_PRESSURE -> s.boostMapKpa
+            StimulableSensor.AIR_MASS -> s.mafGramsSec
+        }
+    }
+
+    fun updateRpm(newRpm: Int) {
+        val clamped = newRpm.coerceIn(RPM_MIN, RPM_MAX)
+        _uiState.update {
+            it.copy(
+                rpm = clamped,
+                selectedCrankingMode = CrankingModePreset.CUSTOM
+            )
+        }
+        if (_uiState.value.isSignalRunning) {
+            if (bluetoothController.packetMode.value == SerialPacketMode.KeyValueCommands) {
+                bluetoothController.sendRpmCommand(clamped)
+            } else {
+                transmitEcuFrame()
+            }
+        }
+    }
+
+    fun updateRailPressure(newRail: Int) {
+        val clamped = newRail.coerceIn(RAIL_MIN, RAIL_MAX)
+        _uiState.update {
+            it.copy(
+                railPressure = clamped,
+                selectedCrankingMode = if (it.currentRoute == AppRoute.EcuCrankingSetup) CrankingModePreset.CUSTOM else it.selectedCrankingMode
+            )
+        }
+        if (_uiState.value.isSignalRunning || _uiState.value.isSensorStimulationRunning) {
+            if (bluetoothController.packetMode.value == SerialPacketMode.KeyValueCommands) {
+                bluetoothController.sendRailCommand(clamped)
+            } else if (_uiState.value.isSensorStimulationRunning) {
+                transmitSensorOnlyFrame()
+            } else {
+                transmitEcuFrame()
+            }
+        }
+    }
+
+    fun updateEctTemp(newEct: Int) {
+        val clamped = newEct.coerceIn(ECT_MIN, ECT_MAX)
+        _uiState.update { it.copy(ectTemp = clamped) }
+        if (_uiState.value.isSignalRunning || _uiState.value.isSensorStimulationRunning) {
+            if (bluetoothController.packetMode.value == SerialPacketMode.KeyValueCommands) {
+                bluetoothController.sendEctCommand(clamped)
+            } else if (_uiState.value.isSensorStimulationRunning) {
+                transmitSensorOnlyFrame()
+            } else {
+                transmitEcuFrame()
+            }
+        }
+    }
+
+    fun updateVehicleSpeed(newSpeed: Int) {
+        val clamped = newSpeed.coerceIn(SPEED_MIN, SPEED_MAX)
+        _uiState.update { it.copy(vehicleSpeed = clamped) }
+        if (_uiState.value.isSignalRunning || _uiState.value.isSensorStimulationRunning) {
+            if (bluetoothController.packetMode.value == SerialPacketMode.KeyValueCommands) {
+                bluetoothController.sendSpeedCommand(clamped)
+            } else if (_uiState.value.isSensorStimulationRunning) {
+                transmitSensorOnlyFrame()
+            } else {
+                transmitEcuFrame()
+            }
+        }
+    }
+
+    fun updateBoostMap(newMapKpa: Int) {
+        val clamped = newMapKpa.coerceIn(MAP_MIN, MAP_MAX)
+        _uiState.update { it.copy(boostMapKpa = clamped) }
+        if (_uiState.value.isSignalRunning || _uiState.value.isSensorStimulationRunning) {
+            if (bluetoothController.packetMode.value == SerialPacketMode.KeyValueCommands) {
+                bluetoothController.sendMapCommand(clamped)
+            } else if (_uiState.value.isSensorStimulationRunning) {
+                transmitSensorOnlyFrame()
+            } else {
+                transmitEcuFrame()
+            }
+        }
+    }
+
+    fun updateMaf(newMaf: Int) {
+        val clamped = newMaf.coerceIn(MAF_MIN, MAF_MAX)
+        _uiState.update { it.copy(mafGramsSec = clamped) }
+        if (_uiState.value.isSignalRunning || _uiState.value.isSensorStimulationRunning) {
+            if (bluetoothController.packetMode.value == SerialPacketMode.KeyValueCommands) {
+                bluetoothController.sendMafCommand(clamped)
+            } else if (_uiState.value.isSensorStimulationRunning) {
+                transmitSensorOnlyFrame()
+            } else {
+                transmitEcuFrame()
+            }
+        }
+    }
+
+    fun toggleCamSync(enabled: Boolean) {
+        _uiState.update { it.copy(camSyncEnabled = enabled) }
+        if (_uiState.value.isSignalRunning) {
+            if (bluetoothController.packetMode.value == SerialPacketMode.KeyValueCommands) {
+                bluetoothController.sendCamSyncCommand(enabled)
+            } else {
+                transmitEcuFrame()
+            }
+        }
+    }
+
+    /**
+     * ECU Stimulation Start/Stop:
+     * - NEVER displays "via Bluetooth"
+     * - If Bluetooth is NOT connected when Start or Stop is tapped, shows "Connect Bluetooth first" error.
+     */
+    fun toggleEcuStartStop() {
+        if (bluetoothController.connectionState.value !is BtConnectionState.Connected) {
+            _uiState.update {
+                it.copy(
+                    isSignalRunning = false,
+                    showBtConnectFirstDialog = true,
+                    statusBannerMessage = "Connect Bluetooth first"
+                )
+            }
+            return
+        }
+
+        val nextRunning = !_uiState.value.isSignalRunning
+        _uiState.update {
+            it.copy(
+                isSignalRunning = nextRunning,
+                isSensorStimulationRunning = false,
+                statusBannerMessage = if (nextRunning) "ECU Cranking Started" else "ECU Cranking Stopped"
+            )
+        }
+        if (nextRunning) {
+            transmitEcuFrame()
+            recordEcuStimulationHistory()
+        } else {
+            bluetoothController.sendStopCommand()
+        }
+    }
+
+    private fun stopEcuStimulationInternal() {
+        _uiState.update { it.copy(isSignalRunning = false) }
+        if (bluetoothController.connectionState.value is BtConnectionState.Connected) {
+            bluetoothController.sendStopCommand()
+        }
+    }
+
+    /**
+     * Sensor Stimulation Start/Stop (NO Crank / NO Cam):
+     * - Requires 1 or 2 ticked sensors
+     * - If Bluetooth is NOT connected when Start or Stop is tapped, shows "Connect Bluetooth first" error.
+     */
+    fun toggleSensorStimulationStartStop() {
+        if (bluetoothController.connectionState.value !is BtConnectionState.Connected) {
+            _uiState.update {
+                it.copy(
+                    isSensorStimulationRunning = false,
+                    showBtConnectFirstDialog = true,
+                    statusBannerMessage = "Connect Bluetooth first"
+                )
+            }
+            return
+        }
+
+        if (!_uiState.value.isSensorStimulationRunning && _uiState.value.sensorStimulationTicked.isEmpty()) {
+            _uiState.update {
+                it.copy(statusBannerMessage = "Tick 1 or 2 sensors first to start stimulation")
+            }
+            return
+        }
+
+        val nextRunning = !_uiState.value.isSensorStimulationRunning
+        _uiState.update {
+            it.copy(
+                isSensorStimulationRunning = nextRunning,
+                isSignalRunning = false,
+                statusBannerMessage = if (nextRunning) "Sensor Stimulation Started" else "Sensor Stimulation Stopped"
+            )
+        }
+        if (nextRunning) {
+            transmitSensorOnlyFrame()
+            recordSensorStimulationHistory()
+        } else {
+            bluetoothController.sendStopCommand()
+        }
+    }
+
     fun resetAllValuesToZero() {
         _uiState.update {
             it.copy(
@@ -405,163 +558,61 @@ class EcuLabViewModel(application: Application) : AndroidViewModel(application) 
                 boostMapKpa = 0,
                 mafGramsSec = 0,
                 isSignalRunning = false,
+                isSensorStimulationRunning = false,
                 statusBannerMessage = "RESET COMPLETED: ALL VALUES SET TO 0"
             )
         }
-        if (bluetoothController.packetMode.value == SerialPacketMode.KeyValueCommands) {
+        if (bluetoothController.connectionState.value is BtConnectionState.Connected) {
             bluetoothController.sendStopCommand()
             bluetoothController.sendRpmCommand(0)
             bluetoothController.sendRailCommand(0)
             bluetoothController.sendEctCommand(0)
             bluetoothController.sendSpeedCommand(0)
-            bluetoothController.sendAccelCommand(0)
             bluetoothController.sendMapCommand(0)
             bluetoothController.sendMafCommand(0)
-        } else {
-            transmitCurrentFrame()
         }
     }
 
-    fun setBrandFilter(brand: String) {
-        _uiState.update { it.copy(selectedBrandFilter = brand) }
+    fun dismissBtConnectFirstDialog() {
+        _uiState.update { it.copy(showBtConnectFirstDialog = false) }
     }
 
-    fun setSearchQuery(query: String) {
-        _uiState.update { it.copy(searchQuery = query) }
-    }
-
-    fun updateRpm(newRpm: Int) {
-        val clamped = newRpm.coerceIn(RPM_MIN, RPM_MAX)
-        _uiState.update { it.copy(rpm = clamped) }
-        if (bluetoothController.packetMode.value == SerialPacketMode.KeyValueCommands) {
-            bluetoothController.sendRpmCommand(clamped)
-        } else {
-            transmitCurrentFrame()
-        }
-    }
-
-    fun updateRailPressure(newRail: Int) {
-        val clamped = newRail.coerceIn(RAIL_MIN, RAIL_MAX)
-        _uiState.update { it.copy(railPressure = clamped) }
-        if (bluetoothController.packetMode.value == SerialPacketMode.KeyValueCommands) {
-            bluetoothController.sendRailCommand(clamped)
-        } else {
-            transmitCurrentFrame()
-        }
-    }
-
-    fun updateEctTemp(newEct: Int) {
-        val clamped = newEct.coerceIn(ECT_MIN, ECT_MAX)
-        _uiState.update { it.copy(ectTemp = clamped) }
-        if (bluetoothController.packetMode.value == SerialPacketMode.KeyValueCommands) {
-            bluetoothController.sendEctCommand(clamped)
-        } else {
-            transmitCurrentFrame()
-        }
-    }
-
-    fun updateVehicleSpeed(newSpeed: Int) {
-        val clamped = newSpeed.coerceIn(SPEED_MIN, SPEED_MAX)
-        _uiState.update { it.copy(vehicleSpeed = clamped) }
-        if (bluetoothController.packetMode.value == SerialPacketMode.KeyValueCommands) {
-            bluetoothController.sendSpeedCommand(clamped)
-        } else {
-            transmitCurrentFrame()
-        }
-    }
-
-    fun updateAccelerator(newAccel: Int) {
-        val clamped = newAccel.coerceIn(ACCEL_MIN, ACCEL_MAX)
-        _uiState.update { it.copy(accelerator = clamped) }
-        if (bluetoothController.packetMode.value == SerialPacketMode.KeyValueCommands) {
-            bluetoothController.sendAccelCommand(clamped)
-        } else {
-            transmitCurrentFrame()
-        }
-    }
-
-    fun updateBoostMap(newMapKpa: Int) {
-        val clamped = newMapKpa.coerceIn(MAP_MIN, MAP_MAX)
-        _uiState.update { it.copy(boostMapKpa = clamped) }
-        if (bluetoothController.packetMode.value == SerialPacketMode.KeyValueCommands) {
-            bluetoothController.sendMapCommand(clamped)
-        } else {
-            transmitCurrentFrame()
-        }
-    }
-
-    fun updateMaf(newMaf: Int) {
-        val clamped = newMaf.coerceIn(MAF_MIN, MAF_MAX)
-        _uiState.update { it.copy(mafGramsSec = clamped) }
-        if (bluetoothController.packetMode.value == SerialPacketMode.KeyValueCommands) {
-            bluetoothController.sendMafCommand(clamped)
-        } else {
-            transmitCurrentFrame()
-        }
-    }
-
-    fun toggleCamSync(enabled: Boolean) {
-        _uiState.update {
-            it.copy(
-                camSyncEnabled = enabled,
-                statusBannerMessage = if (enabled) "CMP Camshaft Sync Pulse ENABLED" else "CMP Camshaft Sync Pulse DISABLED"
-            )
-        }
-        if (bluetoothController.packetMode.value == SerialPacketMode.KeyValueCommands) {
-            bluetoothController.sendCamSyncCommand(enabled)
-        } else {
-            transmitCurrentFrame()
-        }
-    }
-
-    fun toggleInjectorPulse(enabled: Boolean) {
-        _uiState.update {
-            it.copy(
-                injectorPulseEnabled = enabled,
-                statusBannerMessage = if (enabled) "Injector Load Pulse ENABLED" else "Injector Load Pulse DISABLED"
-            )
-        }
-        if (bluetoothController.packetMode.value == SerialPacketMode.KeyValueCommands) {
-            bluetoothController.sendInjectorCommand(enabled)
-        } else {
-            transmitCurrentFrame()
-        }
-    }
-
-    fun toggleSignalGeneration() {
-        val nextRunning = !_uiState.value.isSignalRunning
-        _uiState.update { state ->
-            state.copy(
-                isSignalRunning = nextRunning,
-                statusBannerMessage = if (nextRunning) "Sent START\\n via Bluetooth" else "Sent STOP\\n via Bluetooth"
-            )
-        }
-        if (bluetoothController.packetMode.value == SerialPacketMode.KeyValueCommands) {
-            if (nextRunning) {
-                bluetoothController.sendStartCommand()
-            } else {
-                bluetoothController.sendStopCommand()
-            }
-        } else {
-            transmitCurrentFrame()
-        }
-    }
-
-    private fun transmitCurrentFrame() {
+    private fun transmitEcuFrame() {
         val s = _uiState.value
+        val picked = s.ecuPickedSensors
         bluetoothController.sendEcuFrame(
             internalCrankPattern = s.selectedVehicle.crankPattern,
             rpm = s.rpm,
-            railBar = s.railPressure,
-            ectCelsius = s.ectTemp,
-            speedKmh = s.vehicleSpeed,
+            railBar = if (StimulableSensor.RAIL_PRESSURE in picked) s.railPressure else s.railPressure,
+            ectCelsius = if (StimulableSensor.COOLANT_TEMP in picked) s.ectTemp else 0,
+            speedKmh = if (StimulableSensor.VEHICLE_SPEED in picked) s.vehicleSpeed else 0,
             accelPercent = s.accelerator,
-            boostMapKpa = s.boostMapKpa,
-            mafGramsSec = s.mafGramsSec,
+            boostMapKpa = if (StimulableSensor.BOOST_PRESSURE in picked) s.boostMapKpa else 100,
+            mafGramsSec = if (StimulableSensor.AIR_MASS in picked) s.mafGramsSec else 0,
             camSyncEnabled = s.camSyncEnabled,
             injectorPulseEnabled = s.injectorPulseEnabled,
             isRunning = s.isSignalRunning
         )
+    }
+
+    private fun transmitSensorOnlyFrame() {
+        val s = _uiState.value
+        bluetoothController.sendSensorOnlyFrame(
+            selectedSensors = s.sensorStimulationTicked.map { it.id }.toSet(),
+            railBar = s.railPressure,
+            ectCelsius = s.ectTemp,
+            speedKmh = s.vehicleSpeed,
+            boostMapKpa = s.boostMapKpa,
+            mafGramsSec = s.mafGramsSec,
+            isRunning = s.isSensorStimulationRunning
+        )
+    }
+
+    fun setShowBtQuickSheet(show: Boolean) {
+        if (show) {
+            bluetoothController.refreshPairedDevices()
+        }
+        _uiState.update { it.copy(showBtQuickSheet = show) }
     }
 
     fun openSavePresetDialog() {
@@ -609,6 +660,8 @@ class EcuLabViewModel(application: Application) : AndroidViewModel(application) 
         _uiState.update {
             it.copy(
                 selectedVehicle = vehicle,
+                selectedLcvBrand = vehicle.brand,
+                selectedCrankingMode = CrankingModePreset.CUSTOM,
                 rpm = preset.rpm.coerceIn(RPM_MIN, RPM_MAX),
                 railPressure = preset.railPressure.coerceIn(RAIL_MIN, RAIL_MAX),
                 ectTemp = preset.ectTemp.coerceIn(ECT_MIN, ECT_MAX),
@@ -618,16 +671,69 @@ class EcuLabViewModel(application: Application) : AndroidViewModel(application) 
                 mafGramsSec = preset.mafGramsSec.coerceIn(MAF_MIN, MAF_MAX),
                 camSyncEnabled = preset.camSyncEnabled,
                 injectorPulseEnabled = preset.injectorPulseEnabled,
-                activeTab = EcuLabTab.Control,
+                currentRoute = AppRoute.EcuCrankingSetup,
                 statusBannerMessage = "Loaded preset: ${preset.presetName}"
             )
         }
-        transmitCurrentFrame()
     }
 
     fun deletePreset(id: Int) {
         viewModelScope.launch {
             repository.deletePreset(id)
+        }
+    }
+
+    private fun recordEcuStimulationHistory() {
+        val s = _uiState.value
+        val pickedSummary = if (s.ecuPickedSensors.isEmpty()) {
+            "No Sensors"
+        } else {
+            s.ecuPickedSensors.joinToString(", ") { sensor ->
+                "${sensor.shortLabel}: ${getSensorValue(sensor)} ${sensor.unit}"
+            }
+        }
+        viewModelScope.launch {
+            historyRepository.addEntry(
+                StimulationHistoryEntity(
+                    modeType = "ECU STIMULATION",
+                    vehicleLabel = "${s.selectedVehicle.brand} ${s.selectedVehicle.modelName}",
+                    summary = "${s.selectedCrankingMode.title} • ${s.rpm} RPM • ${s.railPressure} bar • $pickedSummary",
+                    rpm = s.rpm,
+                    railPressure = s.railPressure,
+                    sensorCount = s.ecuPickedSensors.size
+                )
+            )
+        }
+    }
+
+    private fun recordSensorStimulationHistory() {
+        val s = _uiState.value
+        val sensorSummary = s.sensorStimulationTicked.joinToString(", ") { sensor ->
+            "${sensor.shortLabel}: ${getSensorValue(sensor)} ${sensor.unit}"
+        }
+        viewModelScope.launch {
+            historyRepository.addEntry(
+                StimulationHistoryEntity(
+                    modeType = "SENSOR STIMULATION",
+                    vehicleLabel = "Sensor Only (No Crank / Cam)",
+                    summary = sensorSummary.ifEmpty { "No Sensors Selected" },
+                    rpm = 0,
+                    railPressure = if (StimulableSensor.RAIL_PRESSURE in s.sensorStimulationTicked) s.railPressure else 0,
+                    sensorCount = s.sensorStimulationTicked.size
+                )
+            )
+        }
+    }
+
+    fun deleteHistoryEntry(id: Int) {
+        viewModelScope.launch {
+            historyRepository.deleteEntry(id)
+        }
+    }
+
+    fun clearAllHistory() {
+        viewModelScope.launch {
+            historyRepository.clearAll()
         }
     }
 
@@ -669,7 +775,6 @@ class EcuLabViewModel(application: Application) : AndroidViewModel(application) 
 
     fun setSerialPacketMode(mode: SerialPacketMode) {
         bluetoothController.setSerialPacketMode(mode)
-        transmitCurrentFrame()
     }
 
     fun sendCustomSerialCommand(cmd: String) {

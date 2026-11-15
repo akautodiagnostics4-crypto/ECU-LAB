@@ -27,7 +27,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AdminPanelSettings
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.BluetoothConnected
 import androidx.compose.material.icons.filled.BluetoothDisabled
@@ -42,7 +42,6 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Radar
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SupportAgent
-import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -75,12 +74,17 @@ import com.example.ui.theme.CardDarkSurface
 import com.example.ui.theme.CyanGlow
 import com.example.ui.theme.DeepObsidian
 import com.example.ui.theme.ElectricBlue
+import com.example.ui.theme.MetalHighlightEdge
+import com.example.ui.theme.RecessedWell
 import com.example.ui.theme.SignalGreen
 import com.example.ui.theme.SignalGreenBg
 import com.example.ui.theme.StopRed
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextSecondary
 import com.example.ui.theme.TextWhite
+import com.example.ui.theme.TitaniumSilver
+import com.example.ui.theme.brushedMetalPanel
+import com.example.ui.theme.carbonFiberBackground
 
 /**
  * Saved Presets Screen (Room Database backed).
@@ -89,12 +93,13 @@ import com.example.ui.theme.TextWhite
 fun SavedPresetsScreen(
     presets: List<EcuPresetEntity>,
     onLoadPreset: (EcuPresetEntity) -> Unit,
-    onDeletePreset: (Int) -> Unit
+    onDeletePreset: (Int) -> Unit,
+    onBack: (() -> Unit)? = null
 ) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(DeepObsidian)
+            .carbonFiberBackground()
             .testTag("saved_presets_screen"),
         contentAlignment = Alignment.TopCenter
     ) {
@@ -102,20 +107,42 @@ fun SavedPresetsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .widthIn(max = 600.dp)
-                .padding(horizontal = 16.dp, vertical = 14.dp)
+                .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
-            Text(
-                text = "SAVED ECU PRESETS",
-                style = MaterialTheme.typography.headlineMedium,
-                color = TextWhite,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.6.sp
-            )
-            Text(
-                text = "Quickly load saved bench test parameters into the signal generator",
-                style = MaterialTheme.typography.bodyMedium,
-                color = TextSecondary
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (onBack != null) {
+                    IconButton(
+                        onClick = onBack,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .testTag("saved_back_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = TextWhite
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(4.dp))
+                }
+                Column {
+                    Text(
+                        text = "SAVED ECU PRESETS",
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = TextWhite,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.6.sp
+                    )
+                    Text(
+                        text = "Quickly load saved bench test parameters into the signal generator",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextSecondary
+                    )
+                }
+            }
 
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -157,15 +184,12 @@ fun SavedPresetsScreen(
                     contentPadding = PaddingValues(bottom = 16.dp)
                 ) {
                     items(presets, key = { it.id }) { preset ->
-                        Surface(
+                        Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(14.dp))
+                                .brushedMetalPanel(cornerRadius = 14.dp, borderColor = MetalHighlightEdge)
                                 .clickable { onLoadPreset(preset) }
-                                .testTag("preset_item_${preset.id}"),
-                            shape = RoundedCornerShape(14.dp),
-                            color = CardDarkSurface,
-                            border = androidx.compose.foundation.BorderStroke(1.dp, BorderSubtle)
+                                .testTag("preset_item_${preset.id}")
                         ) {
                             Column(
                                 modifier = Modifier
@@ -247,8 +271,8 @@ private fun PresetMetricBadge(label: String, value: String) {
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(6.dp))
-            .background(DeepObsidian)
-            .border(1.dp, BorderSubtle, RoundedCornerShape(6.dp))
+            .background(RecessedWell)
+            .border(1.dp, MetalHighlightEdge, RoundedCornerShape(6.dp))
             .padding(horizontal = 7.dp, vertical = 4.dp)
     ) {
         Text(
@@ -288,8 +312,7 @@ fun DeviceScreen(
     onSendCustomCommand: (String) -> Unit,
     onSendTestPing: () -> Unit,
     onClearLogs: () -> Unit,
-    deviceId: String = "",
-    onOpenAdminKeyGenerator: () -> Unit = {}
+    onBack: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
 
@@ -321,59 +344,88 @@ fun DeviceScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(DeepObsidian)
+            .carbonFiberBackground()
             .testTag("device_screen"),
         contentAlignment = Alignment.TopCenter
     ) {
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .widthIn(max = 600.dp),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+                .widthIn(max = 620.dp),
+            contentPadding = PaddingValues(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Header
+            // Brushed-Metal Bluetooth Header
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .brushedMetalPanel(cornerRadius = 14.dp, borderColor = BorderSubtle, elevated = true)
                 ) {
-                    Column {
-                        Text(
-                            text = "BLUETOOTH",
-                            style = MaterialTheme.typography.headlineLarge,
-                            color = TextWhite,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 2.sp
-                        )
-                        Text(
-                            text = "Select a Bluetooth device below to pair and connect",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = TextSecondary
-                        )
-                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            if (onBack != null) {
+                                IconButton(
+                                    onClick = onBack,
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .testTag("device_back_button")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                        contentDescription = "Back",
+                                        tint = TextWhite
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(4.dp))
+                            }
+                            Column {
+                                Text(
+                                    text = "BLUETOOTH",
+                                    style = MaterialTheme.typography.headlineMedium,
+                                    color = TitaniumSilver,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 2.sp
+                                )
+                                Text(
+                                    text = "Select a Bluetooth device below to pair and connect",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = TextSecondary
+                                )
+                            }
+                        }
 
-                    if (isScanning) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(26.dp),
-                            strokeWidth = 2.5.dp,
-                            color = CyanGlow
-                        )
+                        if (isScanning) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                strokeWidth = 2.5.dp,
+                                color = CyanGlow
+                            )
+                        }
                     }
                 }
             }
 
             // Connection Status & Scan Controls Card
             item {
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = CardDarkSurface,
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp,
-                        if (btState is BtConnectionState.Connected) SignalGreen else BorderSubtle
-                    ),
-                    modifier = Modifier.fillMaxWidth()
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .brushedMetalPanel(
+                            cornerRadius = 14.dp,
+                            borderColor = if (btState is BtConnectionState.Connected) SignalGreen else BorderSubtle,
+                            borderWidth = 1.2.dp,
+                            elevated = true
+                        )
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Row(
@@ -572,11 +624,10 @@ fun DeviceScreen(
 
             if (discoveredDevices.isEmpty()) {
                 item {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = CardDarkSurface,
-                        border = androidx.compose.foundation.BorderStroke(1.dp, BorderSubtle),
-                        modifier = Modifier.fillMaxWidth()
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .brushedMetalPanel(cornerRadius = 12.dp, borderColor = BorderSubtle)
                     ) {
                         Text(
                             text = if (isScanning) {
@@ -615,12 +666,14 @@ fun DeviceScreen(
             }
 
             item {
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = CardDarkSurface,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, ElectricBlue.copy(alpha = 0.5f)),
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .brushedMetalPanel(
+                            cornerRadius = 14.dp,
+                            borderColor = ElectricBlue.copy(alpha = 0.55f),
+                            elevated = true
+                        )
                         .testTag("contact_info_card")
                 ) {
                     Column(
@@ -651,7 +704,7 @@ fun DeviceScreen(
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = "ECU LAB • Multi-Vehicle ECU Simulator & Test Bench",
+                                    text = "AK ECU STIMULATOR • Automotive Test Bench",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = TextSecondary
                                 )
@@ -707,84 +760,6 @@ fun DeviceScreen(
                     }
                 }
             }
-
-            // Device License & Admin Key Generator Section
-            item {
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = "DEVICE LICENSE & ADMIN KEY GENERATOR",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = CyanGlow,
-                    letterSpacing = 1.5.sp
-                )
-            }
-
-            item {
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = CardDarkSurface,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, BorderSubtle),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.VerifiedUser,
-                                    contentDescription = null,
-                                    tint = SignalGreen,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column {
-                                    Text(
-                                        text = "Permanently Activated License",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        color = SignalGreen,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        text = "Device ID: $deviceId",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = TextSecondary
-                                    )
-                                }
-                            }
-                        }
-
-                        OutlinedButton(
-                            onClick = onOpenAdminKeyGenerator,
-                            shape = RoundedCornerShape(10.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, ElectricBlue),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(48.dp)
-                                .testTag("device_open_admin_keygen_button")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.AdminPanelSettings,
-                                contentDescription = null,
-                                tint = CyanGlow,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "ADMIN UNLOCK KEY GENERATOR",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = CyanGlow,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                }
-            }
         }
     }
 }
@@ -798,23 +773,22 @@ private fun BluetoothDeviceListCard(
     testTag: String,
     onClick: () -> Unit
 ) {
-    Surface(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .brushedMetalPanel(
+                cornerRadius = 12.dp,
+                borderColor = if (isConnected) SignalGreen else BorderSubtle,
+                borderWidth = if (isConnected) 1.5.dp else 1.dp,
+                elevated = isConnected
+            )
             .clickable { onClick() }
-            .testTag(testTag),
-        shape = RoundedCornerShape(12.dp),
-        color = CardDarkSurface,
-        border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            if (isConnected) SignalGreen else BorderSubtle
-        )
+            .testTag(testTag)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+                .padding(horizontal = 14.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -826,7 +800,8 @@ private fun BluetoothDeviceListCard(
                     modifier = Modifier
                         .size(40.dp)
                         .clip(CircleShape)
-                        .background(if (isConnected) SignalGreenBg else DeepObsidian),
+                        .background(if (isConnected) SignalGreenBg else RecessedWell)
+                        .border(1.dp, if (isConnected) SignalGreen else MetalHighlightEdge, CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -841,7 +816,7 @@ private fun BluetoothDeviceListCard(
                     Text(
                         text = deviceName,
                         style = MaterialTheme.typography.titleMedium,
-                        color = TextWhite,
+                        color = TitaniumSilver,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
@@ -856,7 +831,8 @@ private fun BluetoothDeviceListCard(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .clip(RoundedCornerShape(8.dp))
-                    .background(if (isConnected) SignalGreenBg else ButtonDarkSurface)
+                    .background(if (isConnected) SignalGreenBg else RecessedWell)
+                    .border(1.dp, if (isConnected) SignalGreen else MetalHighlightEdge, RoundedCornerShape(8.dp))
                     .padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
                 Icon(

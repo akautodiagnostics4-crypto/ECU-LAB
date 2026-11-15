@@ -73,9 +73,13 @@ class Hc05BluetoothController(private val context: Context) {
 
     companion object {
         val SPP_UUID: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
+        private const val BT_PREFS = "ak_ecu_bt_prefs"
+        private const val KEY_LAST_BT_ADDR = "last_bt_address"
+        private const val KEY_LAST_BT_NAME = "last_bt_name"
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val btPrefs = context.getSharedPreferences(BT_PREFS, Context.MODE_PRIVATE)
     private val bluetoothManager: BluetoothManager? =
         context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
     private val bluetoothAdapter: BluetoothAdapter? = bluetoothManager?.adapter
@@ -85,6 +89,7 @@ class Hc05BluetoothController(private val context: Context) {
     private var readerJob: Job? = null
     private var lastConnectedDevice: BtDeviceItem? = null
     private var receiverRegistered = false
+    private var autoConnectAttempted = false
 
     private val _connectionState = MutableStateFlow<BtConnectionState>(BtConnectionState.Disconnected)
     val connectionState: StateFlow<BtConnectionState> = _connectionState.asStateFlow()
@@ -232,6 +237,7 @@ class Hc05BluetoothController(private val context: Context) {
     init {
         registerReceiverIfNeeded()
         refreshPairedDevices()
+        attemptAutoConnect()
     }
 
     private fun registerReceiverIfNeeded() {
@@ -393,11 +399,37 @@ class Hc05BluetoothController(private val context: Context) {
     fun quickConnectHc05() {
         refreshPairedDevices()
         val pairedList = _pairedDevices.value
-        val candidate = pairedList.firstOrNull { it.isHc05Candidate } ?: pairedList.firstOrNull()
+        val savedAddr = btPrefs.getString(KEY_LAST_BT_ADDR, null)
+        val candidate = pairedList.firstOrNull { it.address == savedAddr }
+            ?: pairedList.firstOrNull { it.isHc05Candidate }
+            ?: pairedList.firstOrNull()
         if (candidate != null) {
             connectToDevice(candidate)
         } else {
             startDiscoveryScan()
+        }
+    }
+
+    fun attemptAutoConnect(forceRetry: Boolean = false) {
+        if (!_autoReconnect.value) return
+        if (!hasBluetoothPermissions() || !isBluetoothEnabled()) return
+        val currentState = _connectionState.value
+        if (currentState is BtConnectionState.Connected ||
+            currentState is BtConnectionState.Connecting ||
+            currentState is BtConnectionState.Pairing
+        ) {
+            return
+        }
+        if (autoConnectAttempted && !forceRetry) return
+        autoConnectAttempted = true
+
+        refreshPairedDevices()
+        val pairedList = _pairedDevices.value
+        val savedAddr = btPrefs.getString(KEY_LAST_BT_ADDR, null)
+        val target = pairedList.firstOrNull { it.address == savedAddr }
+            ?: pairedList.firstOrNull { it.isHc05Candidate }
+        if (target != null) {
+            connectToDevice(target)
         }
     }
 
@@ -468,6 +500,10 @@ class Hc05BluetoothController(private val context: Context) {
         activeSocket = socket
         outputStream = socket.outputStream
         lastConnectedDevice = deviceItem.copy(isPaired = true)
+        btPrefs.edit()
+            .putString(KEY_LAST_BT_ADDR, deviceItem.address)
+            .putString(KEY_LAST_BT_NAME, deviceItem.name)
+            .apply()
         _connectionState.value = BtConnectionState.Connected(deviceItem.name, deviceItem.address)
         startIncomingReader(socket)
     }
@@ -643,6 +679,46 @@ class Hc05BluetoothController(private val context: Context) {
         }
 
         sendLineToBt(wireLine = wirePacket.trimEnd('\n'), displayLabel = wirePacket.trim())
+    }
+
+    /**
+     * Sensor-only stimulation frame (NO Crank RPM, NO Cam Sync, NO crank tooth pattern).
+     * Sends only the user-ticked sensors and START/STOP flag.
+     */
+    fun sendSensorOnlyFrame(
+        selectedSensors: Set<String>,
+        railBar: Int,
+        ectCelsius: Int,
+        speedKmh: Int,
+        boostMapKpa: Int,
+        mafGramsSec: Int,
+        isRunning: Boolean
+    ) {
+        val payload = buildString {
+            append("SENSOR_MODE=1\n")
+            if ("rail" in selectedSensors) append("RAIL=$railBar\n")
+            if ("ect" in selectedSensors) append("ECT=$ectCelsius\n")
+            if ("speed" in selectedSensors) append("SPEED=$speedKmh\n")
+            if ("map" in selectedSensors) append("MAP=$boostMapKpa\n")
+            if ("maf" in selectedSensors) append("MAF=$mafGramsSec\n")
+            append(if (isRunning) "START\n" else "STOP\n")
+        }
+        scope.launch {
+            val stream = outputStream
+            if (stream != null && _connectionState.value is BtConnectionState.Connected) {
+                try {
+                    withContext(Dispatchers.IO) {
+                        stream.write(payload.toByteArray(Charsets.US_ASCII))
+                        stream.flush()
+                    }
+                    _packetsSentCount.value += 1
+                    appendLog("TX -> SENSOR(${selectedSensors.joinToString(",")}) ${if (isRunning) "START" else "STOP"}")
+                } catch (_: IOException) {
+                    disconnectInternal()
+                    _connectionState.value = BtConnectionState.Error("Bluetooth link lost")
+                }
+            }
+        }
     }
 
     fun clearLogs() {

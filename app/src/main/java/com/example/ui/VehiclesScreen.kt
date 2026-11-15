@@ -18,263 +18,99 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.DirectionsBus
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.LocalShipping
-import androidx.compose.material.icons.filled.Memory
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Verified
-import androidx.compose.material.icons.filled.WorkspacePremium
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
+import com.example.bluetooth.BtConnectionState
 import com.example.data.VehicleCatalog
+import com.example.data.VehicleCategoryType
 import com.example.data.VehicleModel
 import com.example.ui.theme.BorderSubtle
-import com.example.ui.theme.ButtonDarkSurface
-import com.example.ui.theme.CardDarkSurface
 import com.example.ui.theme.CyanGlow
-import com.example.ui.theme.DeepObsidian
 import com.example.ui.theme.ElectricBlue
+import com.example.ui.theme.GoldAccent
+import com.example.ui.theme.RecessedWell
 import com.example.ui.theme.SignalGreen
 import com.example.ui.theme.SignalGreenBg
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextSecondary
 import com.example.ui.theme.TextWhite
+import com.example.ui.theme.TitaniumSilver
+import com.example.ui.theme.WarningAmber
+import com.example.ui.theme.brushedMetalPanel
+import com.example.ui.theme.carbonFiberBackground
 
 /**
- * Displays the ALL VEHICLE LIST screen that appears automatically after the 3s + 2s boot sequence.
- *
- * CRITICAL USER REQUIREMENT:
- * "DONT SHOW THE CRANK TOOTH PATTERN ON THE DISPLAY"
- * Every vehicle card displays Brand, Model Name, Category (CAR/LCV/HCV), and ECU System,
- * while keeping the crank tooth pattern (60-2 / 36-2) completely hidden from the display!
+ * Step 1 inside ECU STIMULATION:
+ * Displays VEHICLE CATEGORY options: CAR, LCV, HCV, BUS.
+ * - LCV is fully active (5 brands + vehicle lineup + cranking/sensor controls).
+ * - CAR, HCV, BUS open their Brand Logo directory with "COMING SOON" ONLY.
  */
 @Composable
-fun VehiclesScreen(
-    selectedVehicle: VehicleModel,
-    selectedBrandFilter: String,
-    searchQuery: String,
-    isProUnlocked: Boolean = false,
-    onOpenPaymentGateway: () -> Unit = {},
-    onBrandFilterChange: (String) -> Unit,
-    onSearchQueryChange: (String) -> Unit,
-    onSelectVehicle: (VehicleModel) -> Unit
+fun EcuCategorySelectionScreen(
+    btState: BtConnectionState,
+    onBack: () -> Unit,
+    onOpenBluetoothSheet: () -> Unit,
+    onSelectCategory: (VehicleCategoryType) -> Unit
 ) {
-    val filteredVehicles = VehicleCatalog.allVehicles.filter { vehicle ->
-        val matchesBrand = selectedBrandFilter == "ALL" || vehicle.brand.equals(selectedBrandFilter, ignoreCase = true)
-        val matchesQuery = searchQuery.isBlank() ||
-            vehicle.modelName.contains(searchQuery, ignoreCase = true) ||
-            vehicle.brand.contains(searchQuery, ignoreCase = true) ||
-            vehicle.ecuSystem.contains(searchQuery, ignoreCase = true)
-        matchesBrand && matchesQuery
-    }
-
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(DeepObsidian)
-            .testTag("all_vehicles_screen"),
+            .carbonFiberBackground()
+            .testTag("ecu_category_screen"),
         contentAlignment = Alignment.TopCenter
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .widthIn(max = 600.dp)
+                .widthIn(max = 580.dp)
         ) {
-            // Header with Logo + Title + Pro Gateway Button
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Image(
-                        painter = painterResource(id = R.drawable.img_ak_ecu_logo_1791276792510),
-                        contentDescription = "ECU LAB Logo",
-                        modifier = Modifier
-                            .size(46.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .border(1.dp, ElectricBlue.copy(alpha = 0.5f), RoundedCornerShape(10.dp)),
-                        contentScale = ContentScale.Crop
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column {
-                        Text(
-                            text = "ALL VEHICLES LIST",
-                            style = MaterialTheme.typography.headlineMedium,
-                            color = TextWhite,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.6.sp,
-                            modifier = Modifier.testTag("all_vehicles_header")
-                        )
-                        Text(
-                            text = "Select vehicle to open real-time ECU signal generator",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = TextSecondary
-                        )
-                    }
-                }
-
-                Surface(
-                    shape = RoundedCornerShape(50),
-                    color = if (isProUnlocked) SignalGreenBg else ElectricBlue.copy(alpha = 0.2f),
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp,
-                        if (isProUnlocked) SignalGreen else CyanGlow
-                    ),
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(50))
-                        .clickable { onOpenPaymentGateway() }
-                        .testTag("open_pro_gateway_badge")
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = if (isProUnlocked) Icons.Default.Verified else Icons.Default.WorkspacePremium,
-                            contentDescription = "Pro Plan",
-                            tint = if (isProUnlocked) SignalGreen else CyanGlow,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(5.dp))
-                        Text(
-                            text = if (isProUnlocked) "PRO ACTIVE" else "UPGRADE PRO",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (isProUnlocked) SignalGreen else CyanGlow,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-            }
-
-            // Search bar
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = onSearchQueryChange,
-                placeholder = {
-                    Text(
-                        text = "Search Bolero, Scorpio, Tata 407, Nano, Dost...",
-                        color = TextMuted
-                    )
-                },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.Search,
-                        contentDescription = "Search Vehicles",
-                        tint = ElectricBlue
-                    )
-                },
-                trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { onSearchQueryChange("") }) {
-                            Icon(
-                                imageVector = Icons.Default.Clear,
-                                contentDescription = "Clear search",
-                                tint = TextSecondary
-                            )
-                        }
-                    }
-                },
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = CardDarkSurface,
-                    unfocusedContainerColor = CardDarkSurface,
-                    focusedBorderColor = ElectricBlue,
-                    unfocusedBorderColor = BorderSubtle,
-                    focusedTextColor = TextWhite,
-                    unfocusedTextColor = TextWhite
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .testTag("vehicle_search_input")
+            SubScreenTopBar(
+                title = "VEHICLE CATEGORY",
+                btState = btState,
+                onBack = onBack,
+                onOpenBluetoothSheet = onOpenBluetoothSheet,
+                backTestTag = "category_back_button"
             )
 
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Brand Filter Chips (ALL, MAHINDRA, TATA, ASHOK LEYLAND)
-            LazyRow(
-                contentPadding = PaddingValues(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                items(VehicleCatalog.brands) { brand ->
-                    val isSelected = selectedBrandFilter == brand
-                    FilterChip(
-                        selected = isSelected,
-                        onClick = { onBrandFilterChange(brand) },
-                        label = {
-                            Text(
-                                text = brand,
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.Bold
-                            )
-                        },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = ElectricBlue,
-                            selectedLabelColor = TextWhite,
-                            containerColor = CardDarkSurface,
-                            labelColor = TextSecondary
-                        ),
-                        border = FilterChipDefaults.filterChipBorder(
-                            enabled = true,
-                            selected = isSelected,
-                            borderColor = BorderSubtle,
-                            selectedBorderColor = CyanGlow
-                        ),
-                        modifier = Modifier.testTag("brand_chip_${brand.lowercase().replace(" ", "_")}")
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Vehicle List grouped & displayed clearly without any tooth pattern text
             LazyColumn(
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxWidth()
-                    .testTag("vehicle_lazy_list"),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                    .fillMaxWidth(),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(filteredVehicles, key = { it.id }) { vehicle ->
-                    VehicleListItemCard(
-                        vehicle = vehicle,
-                        isSelected = vehicle.id == selectedVehicle.id,
-                        onClick = { onSelectVehicle(vehicle) }
+                items(VehicleCategoryType.entries) { category ->
+                    CategoryOptionCard(
+                        category = category,
+                        onClick = { onSelectCategory(category) }
                     )
                 }
             }
@@ -283,140 +119,611 @@ fun VehiclesScreen(
 }
 
 @Composable
-private fun VehicleListItemCard(
-    vehicle: VehicleModel,
-    isSelected: Boolean,
+private fun CategoryOptionCard(
+    category: VehicleCategoryType,
     onClick: () -> Unit
 ) {
-    val borderColor = if (isSelected) ElectricBlue else BorderSubtle
-    val containerColor = if (isSelected) ButtonDarkSurface else CardDarkSurface
+    val (previewDrawable, iconVector, accentColor) = when (category) {
+        VehicleCategoryType.CAR -> Triple(
+            R.drawable.img_car_front_glow_1794742208220,
+            Icons.Default.DirectionsCar,
+            WarningAmber
+        )
+        VehicleCategoryType.LCV -> Triple(
+            R.drawable.img_lcv_pickup_bolero_1794745518078,
+            Icons.Default.LocalShipping,
+            SignalGreen
+        )
+        VehicleCategoryType.HCV -> Triple(
+            R.drawable.img_vehicle_truck_bench_1794742209701,
+            Icons.Default.LocalShipping,
+            WarningAmber
+        )
+        VehicleCategoryType.BUS -> Triple(
+            R.drawable.img_category_bus_1794747200488,
+            Icons.Default.DirectionsBus,
+            WarningAmber
+        )
+    }
 
-    Surface(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
+            .brushedMetalPanel(
+                cornerRadius = 16.dp,
+                borderColor = if (category.isComingSoon) BorderSubtle else SignalGreen.copy(alpha = 0.8f),
+                borderWidth = if (category.isComingSoon) 1.dp else 1.5.dp,
+                elevated = !category.isComingSoon
+            )
             .clickable { onClick() }
-            .testTag("vehicle_card_${vehicle.id}"),
-        shape = RoundedCornerShape(14.dp),
-        color = containerColor,
-        border = androidx.compose.foundation.BorderStroke(if (isSelected) 1.5.dp else 1.dp, borderColor)
+            .testTag("category_card_${category.name.lowercase()}")
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+                .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f)
+            Box(
+                modifier = Modifier
+                    .size(width = 112.dp, height = 78.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .border(1.dp, accentColor.copy(alpha = 0.55f), RoundedCornerShape(12.dp))
             ) {
+                Image(
+                    painter = painterResource(id = previewDrawable),
+                    contentDescription = category.title,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
                 Box(
                     modifier = Modifier
-                        .size(46.dp)
+                        .align(Alignment.TopStart)
+                        .padding(5.dp)
+                        .size(24.dp)
                         .clip(CircleShape)
-                        .background(if (isSelected) ElectricBlue.copy(alpha = 0.2f) else DeepObsidian)
-                        .border(1.dp, borderColor, CircleShape),
+                        .background(RecessedWell.copy(alpha = 0.85f)),
                     contentAlignment = Alignment.Center
                 ) {
-                    val icon = if (vehicle.category.contains("CAR")) {
-                        Icons.Default.DirectionsCar
-                    } else {
-                        Icons.Default.LocalShipping
-                    }
                     Icon(
-                        imageVector = icon,
-                        contentDescription = vehicle.category,
-                        tint = if (isSelected) CyanGlow else ElectricBlue,
-                        modifier = Modifier.size(22.dp)
+                        imageVector = iconVector,
+                        contentDescription = null,
+                        tint = accentColor,
+                        modifier = Modifier.size(14.dp)
                     )
                 }
+            }
 
-                Spacer(modifier = Modifier.width(14.dp))
-
-                Column {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = category.title,
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = TextWhite,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.2.sp
+                    )
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(if (category.isComingSoon) RecessedWell else SignalGreenBg)
+                            .border(
+                                1.dp,
+                                if (category.isComingSoon) WarningAmber.copy(alpha = 0.7f) else SignalGreen,
+                                RoundedCornerShape(6.dp)
+                            )
+                            .padding(horizontal = 7.dp, vertical = 2.dp)
                     ) {
                         Text(
-                            text = vehicle.brand,
+                            text = if (category.isComingSoon) "COMING SOON" else "ACTIVE",
                             style = MaterialTheme.typography.labelSmall,
-                            color = CyanGlow,
-                            fontWeight = FontWeight.Bold
+                            color = if (category.isComingSoon) GoldAccent else SignalGreen,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 9.sp
                         )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Text(
+                    text = category.subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Text(
+                    text = if (category.isComingSoon) {
+                        "View Brand Lineup (Coming Soon)"
+                    } else {
+                        "Tata • Mahindra • Ashok Leyland • Force • BharatBenz"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (category.isComingSoon) TextMuted else CyanGlow,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = "Open ${category.title}",
+                tint = if (category.isComingSoon) TextSecondary else CyanGlow,
+                modifier = Modifier.size(26.dp)
+            )
+        }
+    }
+}
+
+/**
+ * Shown for CAR, HCV, and BUS categories:
+ * Displays all brands with brand logos and ONLY "COMING SOON" (no stimulation controls).
+ */
+@Composable
+fun ComingSoonBrandsScreen(
+    category: VehicleCategoryType,
+    btState: BtConnectionState,
+    onBack: () -> Unit,
+    onOpenBluetoothSheet: () -> Unit
+) {
+    val brands = VehicleCatalog.comingSoonBrandsByCategory[category].orEmpty()
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .carbonFiberBackground()
+            .testTag("coming_soon_brands_screen"),
+        contentAlignment = Alignment.TopCenter
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .widthIn(max = 580.dp)
+        ) {
+            SubScreenTopBar(
+                title = "${category.title} BRANDS",
+                btState = btState,
+                onBack = onBack,
+                onOpenBluetoothSheet = onOpenBluetoothSheet,
+                backTestTag = "coming_soon_back_button"
+            )
+
+            LazyColumn(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .brushedMetalPanel(
+                                cornerRadius = 14.dp,
+                                borderColor = WarningAmber.copy(alpha = 0.75f),
+                                elevated = true
+                            )
+                            .padding(14.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Schedule,
+                                contentDescription = "Coming Soon",
+                                tint = GoldAccent,
+                                modifier = Modifier.size(28.dp)
+                            )
+                            Column {
+                                Text(
+                                    text = "${category.title} STIMULATION • COMING SOON",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = GoldAccent,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "${category.subtitle} ECU profiles are under development and will be unlocked in an upcoming update.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = TextSecondary
+                                )
+                            }
+                        }
+                    }
+                }
+
+                items(brands) { brand ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .brushedMetalPanel(cornerRadius = 14.dp, borderColor = BorderSubtle)
+                            .padding(horizontal = 14.dp, vertical = 12.dp)
+                            .testTag("coming_soon_brand_${brand.lowercase().replace(" ", "_")}"),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(46.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(RecessedWell)
+                                    .border(1.dp, BorderSubtle, RoundedCornerShape(12.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                VehicleBrandBadge(brand = brand, sizeDp = 34.dp)
+                            }
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Text(
+                                text = brand,
+                                style = MaterialTheme.typography.titleLarge,
+                                color = TitaniumSilver,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
                         Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(DeepObsidian)
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(RecessedWell)
+                                .border(1.dp, WarningAmber.copy(alpha = 0.75f), RoundedCornerShape(8.dp))
+                                .padding(horizontal = 10.dp, vertical = 5.dp)
                         ) {
                             Text(
-                                text = vehicle.category,
+                                text = "COMING SOON",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = TextSecondary
+                                color = GoldAccent,
+                                fontWeight = FontWeight.Bold
                             )
                         }
                     }
+                }
+            }
+        }
+    }
+}
 
-                    Spacer(modifier = Modifier.height(3.dp))
+/**
+ * Step 2 inside LCV:
+ * Displays the 5 LCV Brands with custom Brand Logos:
+ * TATA, MAHINDRA, ASHOK LEYLAND, FORCE, BHARATBENZ.
+ */
+@Composable
+fun LcvBrandsScreen(
+    selectedLcvBrand: String,
+    btState: BtConnectionState,
+    onBack: () -> Unit,
+    onOpenBluetoothSheet: () -> Unit,
+    onSelectBrand: (String) -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .carbonFiberBackground()
+            .testTag("lcv_brands_screen"),
+        contentAlignment = Alignment.TopCenter
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .widthIn(max = 580.dp)
+        ) {
+            SubScreenTopBar(
+                title = "SELECT LCV BRAND",
+                btState = btState,
+                onBack = onBack,
+                onOpenBluetoothSheet = onOpenBluetoothSheet,
+                backTestTag = "lcv_brands_back_button"
+            )
 
-                    Text(
-                        text = vehicle.modelName,
-                        style = MaterialTheme.typography.titleLarge,
-                        color = TextWhite,
-                        fontWeight = FontWeight.Bold
-                    )
+            LazyColumn(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                items(VehicleCatalog.lcvBrands) { brand ->
+                    val vehiclesCount = VehicleCatalog.vehiclesForLcvBrand(brand).size
+                    val isSelected = brand.equals(selectedLcvBrand, ignoreCase = true)
 
-                    Spacer(modifier = Modifier.height(2.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .brushedMetalPanel(
+                                cornerRadius = 14.dp,
+                                borderColor = if (isSelected) CyanGlow else BorderSubtle,
+                                borderWidth = if (isSelected) 1.5.dp else 1.dp,
+                                elevated = true
+                            )
+                            .clickable { onSelectBrand(brand) }
+                            .padding(horizontal = 14.dp, vertical = 14.dp)
+                            .testTag("lcv_brand_card_${brand.lowercase().replace(" ", "_")}"),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(54.dp)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(RecessedWell)
+                                    .border(
+                                        1.2.dp,
+                                        if (isSelected) CyanGlow else BorderSubtle,
+                                        RoundedCornerShape(14.dp)
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                VehicleBrandBadge(brand = brand, sizeDp = 40.dp)
+                            }
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Column {
+                                Text(
+                                    text = brand,
+                                    style = MaterialTheme.typography.titleLarge,
+                                    color = TextWhite,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.8.sp
+                                )
+                                Text(
+                                    text = "$vehiclesCount LCV Vehicles Available",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = CyanGlow
+                                )
+                            }
+                        }
 
-                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            imageVector = Icons.Default.Memory,
-                            contentDescription = null,
-                            tint = TextMuted,
-                            modifier = Modifier.size(13.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = vehicle.ecuSystem,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = TextSecondary
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = "Select $brand",
+                            tint = CyanGlow,
+                            modifier = Modifier.size(26.dp)
                         )
                     }
                 }
             }
+        }
+    }
+}
 
-            if (isSelected) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(50))
-                        .background(SignalGreenBg)
-                        .padding(horizontal = 10.dp, vertical = 6.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.CheckCircle,
-                        contentDescription = "Active Vehicle",
-                        tint = SignalGreen,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "ACTIVE",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = SignalGreen,
-                        fontWeight = FontWeight.Bold
-                    )
+/**
+ * Step 3 inside LCV:
+ * Displays vehicles for the selected brand ONE BY ONE with prominent vehicle studio image,
+ * Brand Logo, Model Name, and ECU System (NEVER shows crank tooth pattern).
+ */
+@Composable
+fun LcvVehiclesScreen(
+    brand: String,
+    selectedVehicle: VehicleModel,
+    btState: BtConnectionState,
+    onBack: () -> Unit,
+    onOpenBluetoothSheet: () -> Unit,
+    onSelectVehicle: (VehicleModel) -> Unit
+) {
+    val brandVehicles = VehicleCatalog.vehiclesForLcvBrand(brand)
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .carbonFiberBackground()
+            .testTag("lcv_vehicles_screen"),
+        contentAlignment = Alignment.TopCenter
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .widthIn(max = 580.dp)
+        ) {
+            SubScreenTopBar(
+                title = "$brand LCV",
+                btState = btState,
+                onBack = onBack,
+                onOpenBluetoothSheet = onOpenBluetoothSheet,
+                backTestTag = "lcv_vehicles_back_button"
+            )
+
+            LazyColumn(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .testTag("lcv_vehicle_list"),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                items(brandVehicles, key = { it.id }) { vehicle ->
+                    val isSelected = vehicle.id == selectedVehicle.id
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .brushedMetalPanel(
+                                cornerRadius = 16.dp,
+                                borderColor = if (isSelected) CyanGlow else BorderSubtle,
+                                borderWidth = if (isSelected) 1.6.dp else 1.dp,
+                                elevated = true
+                            )
+                            .clickable { onSelectVehicle(vehicle) }
+                            .testTag("vehicle_card_${vehicle.id}")
+                    ) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(155.dp)
+                            ) {
+                                Image(
+                                    painter = painterResource(id = vehiclePreviewDrawable(vehicle)),
+                                    contentDescription = "${vehicle.brand} ${vehicle.modelName}",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(
+                                            Brush.verticalGradient(
+                                                colors = listOf(
+                                                    Color.Transparent,
+                                                    Color(0xFF061024).copy(alpha = 0.88f)
+                                                )
+                                            )
+                                        )
+                                )
+
+                                // Brand Logo Overlay in top-left corner
+                                Row(
+                                    modifier = Modifier
+                                        .align(Alignment.TopStart)
+                                        .padding(10.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(RecessedWell.copy(alpha = 0.88f))
+                                        .border(1.dp, CyanGlow.copy(alpha = 0.55f), RoundedCornerShape(10.dp))
+                                        .padding(horizontal = 8.dp, vertical = 5.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    VehicleBrandBadge(brand = vehicle.brand, sizeDp = 22.dp)
+                                    Text(
+                                        text = vehicle.brand,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = TitaniumSilver,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+
+                                if (isSelected) {
+                                    Icon(
+                                        imageVector = Icons.Default.CheckCircle,
+                                        contentDescription = "Selected Vehicle",
+                                        tint = SignalGreen,
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .padding(10.dp)
+                                            .size(26.dp)
+                                    )
+                                }
+                            }
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = vehicle.modelName,
+                                        style = MaterialTheme.typography.titleLarge,
+                                        color = GoldAccent,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "${vehicle.category} • ${vehicle.ecuSystem}",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = TextSecondary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(ElectricBlue.copy(alpha = 0.22f))
+                                        .border(1.dp, CyanGlow.copy(alpha = 0.65f), RoundedCornerShape(8.dp))
+                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    Text(
+                                        text = "SELECT",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = CyanGlow,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
-            } else {
+            }
+        }
+    }
+}
+
+/**
+ * Shared compact sub-screen top bar with Back Arrow, Screen Title, and Small Bluetooth Icon.
+ */
+@Composable
+fun SubScreenTopBar(
+    title: String,
+    btState: BtConnectionState,
+    onBack: () -> Unit,
+    onOpenBluetoothSheet: () -> Unit,
+    backTestTag: String = "subscreen_back_button",
+    trailingContent: @Composable () -> Unit = {}
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.weight(1f)
+        ) {
+            IconButton(
+                onClick = onBack,
+                modifier = Modifier
+                    .size(48.dp)
+                    .testTag(backTestTag)
+            ) {
                 Icon(
-                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                    contentDescription = "Select ${vehicle.modelName}",
-                    tint = TextSecondary
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Back",
+                    tint = TextWhite,
+                    modifier = Modifier.size(24.dp)
                 )
             }
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleLarge,
+                color = TextWhite,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.8.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            trailingContent()
+            SmallBluetoothStatusIcon(
+                btState = btState,
+                onClick = onOpenBluetoothSheet
+            )
         }
     }
 }

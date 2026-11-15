@@ -7,22 +7,29 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bluetooth
-import androidx.compose.material.icons.filled.DirectionsCar
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.outlined.Bluetooth
-import androidx.compose.material.icons.outlined.DirectionsCar
-import androidx.compose.material.icons.outlined.Folder
-import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.filled.BluetoothDisabled
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Memory
+import androidx.compose.material.icons.filled.Sensors
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Memory
+import androidx.compose.material.icons.outlined.Sensors
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -32,34 +39,46 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.ui.ActivationScreen
-import com.example.ui.AdminKeyGeneratorDialog
 import com.example.ui.BootLoadingScreen
-import com.example.ui.ControlScreen
+import com.example.ui.ComingSoonBrandsScreen
+import com.example.ui.ContactScreen
 import com.example.ui.DeviceScreen
+import com.example.ui.EcuCategorySelectionScreen
+import com.example.ui.EcuCrankingSetupScreen
+import com.example.ui.EcuRunOnlyScreen
 import com.example.ui.Hc05ConnectionBottomSheet
-import com.example.ui.Hc05StatusIndicatorBar
+import com.example.ui.HomeScreen
+import com.example.ui.LcvBrandsScreen
+import com.example.ui.LcvVehiclesScreen
 import com.example.ui.LogoSplashScreen
 import com.example.ui.SavedPresetsScreen
-import com.example.ui.VehiclesScreen
+import com.example.ui.SensorStimulationScreen
+import com.example.ui.SettingsScreen
+import com.example.ui.StimulationHistoryScreen
 import com.example.ui.theme.CardDarkSurface
+import com.example.ui.theme.CardElevatedSurface
+import com.example.ui.theme.CyanGlow
 import com.example.ui.theme.DeepObsidian
 import com.example.ui.theme.ElectricBlue
+import com.example.ui.theme.MetalHighlightEdge
 import com.example.ui.theme.MyApplicationTheme
+import com.example.ui.theme.RecessedWell
+import com.example.ui.theme.StopRed
 import com.example.ui.theme.TextSecondary
-import com.example.viewmodel.AccentColorTheme
+import com.example.ui.theme.TextWhite
+import com.example.viewmodel.AppRoute
 import com.example.viewmodel.BootStage
-import com.example.viewmodel.EcuLabTab
 import com.example.viewmodel.EcuLabViewModel
 
 class MainActivity : ComponentActivity() {
@@ -68,14 +87,14 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             MyApplicationTheme {
-                EcuLabApp()
+                AkEcuStimulatorApp()
             }
         }
     }
 }
 
 @Composable
-fun EcuLabApp(
+fun AkEcuStimulatorApp(
     viewModel: EcuLabViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -90,6 +109,7 @@ fun EcuLabApp(
     val packetsReceived by viewModel.packetsReceivedCount.collectAsStateWithLifecycle()
     val lastArduinoAck by viewModel.lastArduinoAck.collectAsStateWithLifecycle()
     val savedPresets by viewModel.savedPresets.collectAsStateWithLifecycle()
+    val stimulationHistory by viewModel.stimulationHistory.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -101,10 +121,9 @@ fun EcuLabApp(
         }
     }
 
-    // Handle Android system back button on sub-tabs when Ready
-    if (uiState.bootStage == BootStage.Ready && uiState.activeTab != EcuLabTab.Vehicles) {
+    if (uiState.bootStage == BootStage.Ready && uiState.currentRoute != AppRoute.Home) {
         BackHandler {
-            viewModel.selectTab(EcuLabTab.Vehicles)
+            viewModel.navigateBack()
         }
     }
 
@@ -114,167 +133,267 @@ fun EcuLabApp(
         label = "boot_stage_transition"
     ) { stage ->
         when (stage) {
-            BootStage.LogoSplash -> {
-                LogoSplashScreen()
-            }
-
-            BootStage.BootLoading -> {
-                BootLoadingScreen()
-            }
-
+            BootStage.LogoSplash -> LogoSplashScreen()
+            BootStage.BootLoading -> BootLoadingScreen()
             BootStage.Ready -> {
-                if (!uiState.isActivated) {
-                    ActivationScreen(
-                        deviceId = uiState.deviceId,
-                        activationError = uiState.activationError,
-                        onActivateSubmit = { code -> viewModel.activateDevice(code) },
-                        onClearError = { viewModel.clearActivationError() },
-                        onOpenAdminGenerator = { viewModel.setShowAdminKeyGeneratorDialog(true) }
-                    )
-                } else {
-                    Scaffold(
-                        modifier = Modifier.fillMaxSize(),
-                        containerColor = DeepObsidian,
-                        contentWindowInsets = WindowInsets.safeDrawing,
-                        snackbarHost = { SnackbarHost(snackbarHostState) },
-                        bottomBar = {
-                            EcuLabBottomBar(
-                                activeTab = uiState.activeTab,
-                                onSelectTab = { viewModel.selectTab(it) }
-                            )
-                        }
-                    ) { innerPadding ->
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(innerPadding)
-                        ) {
-                            // Global HC-05 Connection Status Indicator Bar across all tabs
-                            Hc05StatusIndicatorBar(
-                                btState = btState,
-                                packetsSent = packetsSent,
-                                packetsReceived = packetsReceived,
-                                onOpenQuickManager = { viewModel.setShowBtQuickSheet(true) },
-                                onQuickAction = { viewModel.quickConnectHc05() }
-                            )
+                Scaffold(
+                    modifier = Modifier.fillMaxSize(),
+                    containerColor = DeepObsidian,
+                    contentWindowInsets = WindowInsets.safeDrawing,
+                    snackbarHost = { SnackbarHost(snackbarHostState) },
+                    bottomBar = {
+                        AkBottomNavBar(
+                            currentRoute = uiState.currentRoute,
+                            onSelectHome = { viewModel.navigateHome() },
+                            onSelectEcu = { viewModel.openEcuStimulation() },
+                            onSelectSensors = { viewModel.openSensorStimulation() },
+                            onSelectSettings = { viewModel.navigateTo(AppRoute.Settings) }
+                        )
+                    }
+                ) { innerPadding ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                    ) {
+                        when (uiState.currentRoute) {
+                            AppRoute.Home -> {
+                                HomeScreen(
+                                    btState = btState,
+                                    onTryAutoConnectBt = { viewModel.tryBluetoothAutoConnect() },
+                                    onOpenBluetoothSheet = { viewModel.setShowBtQuickSheet(true) },
+                                    onOpenSettings = { viewModel.navigateTo(AppRoute.Settings) },
+                                    onSelectEcuStimulation = { viewModel.openEcuStimulation() },
+                                    onSelectSensorStimulation = { viewModel.openSensorStimulation() }
+                                )
+                            }
 
-                            Box(modifier = Modifier.weight(1f)) {
-                                when (uiState.activeTab) {
-                                    EcuLabTab.Control -> {
-                                        ControlScreen(
-                                            uiState = uiState,
-                                            btState = btState,
-                                            onTapSelectVehicle = { viewModel.selectTab(EcuLabTab.Vehicles) },
-                                            onTapSavePreset = { viewModel.openSavePresetDialog() },
-                                            onTapBtStatus = { viewModel.setShowBtQuickSheet(true) },
-                                            onRpmChange = { viewModel.updateRpm(it) },
-                                            onRailChange = { viewModel.updateRailPressure(it) },
-                                            onEctChange = { viewModel.updateEctTemp(it) },
-                                            onSpeedChange = { viewModel.updateVehicleSpeed(it) },
-                                            onAccelChange = { viewModel.updateAccelerator(it) },
-                                            onBoostMapChange = { viewModel.updateBoostMap(it) },
-                                            onMafChange = { viewModel.updateMaf(it) },
-                                            onCamSyncToggle = { viewModel.toggleCamSync(it) },
-                                            onInjectorPulseToggle = { viewModel.toggleInjectorPulse(it) },
-                                            onApplyQuickMode = { viewModel.applyQuickBenchMode(it) },
-                                            onCycleAccentTheme = {
-                                                val all = AccentColorTheme.entries
-                                                val next = all[(all.indexOf(uiState.accentTheme) + 1) % all.size]
-                                                viewModel.setAccentTheme(next)
-                                            },
-                                            onResetAllValuesToZero = { viewModel.resetAllValuesToZero() },
-                                            onToggleStartStop = { viewModel.toggleSignalGeneration() },
-                                            onSavePresetConfirm = { viewModel.saveCurrentPreset(it) },
-                                            onDismissSaveDialog = { viewModel.dismissSavePresetDialog() }
-                                        )
-                                    }
+                            AppRoute.EcuCategories -> {
+                                EcuCategorySelectionScreen(
+                                    btState = btState,
+                                    onBack = { viewModel.navigateBack() },
+                                    onOpenBluetoothSheet = { viewModel.setShowBtQuickSheet(true) },
+                                    onSelectCategory = { viewModel.selectVehicleCategory(it) }
+                                )
+                            }
 
-                                    EcuLabTab.Vehicles -> {
-                                        VehiclesScreen(
-                                            selectedVehicle = uiState.selectedVehicle,
-                                            selectedBrandFilter = uiState.selectedBrandFilter,
-                                            searchQuery = uiState.searchQuery,
-                                            onBrandFilterChange = { viewModel.setBrandFilter(it) },
-                                            onSearchQueryChange = { viewModel.setSearchQuery(it) },
-                                            onSelectVehicle = { viewModel.selectVehicle(it) }
-                                        )
-                                    }
+                            AppRoute.ComingSoonBrands -> {
+                                ComingSoonBrandsScreen(
+                                    category = uiState.selectedCategory,
+                                    btState = btState,
+                                    onBack = { viewModel.navigateBack() },
+                                    onOpenBluetoothSheet = { viewModel.setShowBtQuickSheet(true) }
+                                )
+                            }
 
-                                    EcuLabTab.Saved -> {
-                                        SavedPresetsScreen(
-                                            presets = savedPresets,
-                                            onLoadPreset = { viewModel.loadPreset(it) },
-                                            onDeletePreset = { viewModel.deletePreset(it) }
-                                        )
-                                    }
+                            AppRoute.LcvBrands -> {
+                                LcvBrandsScreen(
+                                    selectedLcvBrand = uiState.selectedLcvBrand,
+                                    btState = btState,
+                                    onBack = { viewModel.navigateBack() },
+                                    onOpenBluetoothSheet = { viewModel.setShowBtQuickSheet(true) },
+                                    onSelectBrand = { viewModel.selectLcvBrand(it) }
+                                )
+                            }
 
-                                    EcuLabTab.Device -> {
-                                        DeviceScreen(
-                                            btState = btState,
-                                            pairedDevices = pairedDevices,
-                                            discoveredDevices = discoveredDevices,
-                                            isScanning = isBtScanning,
-                                            autoReconnect = autoReconnect,
-                                            packetMode = packetMode,
-                                            txLog = txLog,
-                                            packetsSent = packetsSent,
-                                            packetsReceived = packetsReceived,
-                                            lastDeviceAck = lastArduinoAck,
-                                            onRefreshPairedDevices = { viewModel.refreshBluetoothDevices() },
-                                            onStartDiscoveryScan = { viewModel.startBtDiscoveryScan() },
-                                            onStopDiscoveryScan = { viewModel.stopBtDiscoveryScan() },
-                                            onConnectDevice = { viewModel.connectHc05(it) },
-                                            onPairAndConnectDevice = { viewModel.pairAndConnectHc05(it) },
-                                            onDisconnect = { viewModel.disconnectHc05() },
-                                            onToggleAutoReconnect = { viewModel.setAutoReconnect(it) },
-                                            onSelectPacketMode = { viewModel.setSerialPacketMode(it) },
-                                            onSendCustomCommand = { viewModel.sendCustomSerialCommand(it) },
-                                            onSendTestPing = { viewModel.sendTestPing() },
-                                            onClearLogs = { viewModel.clearBtLogs() },
-                                            deviceId = uiState.deviceId,
-                                            onOpenAdminKeyGenerator = { viewModel.setShowAdminKeyGeneratorDialog(true) }
-                                        )
-                                    }
-                                }
+                            AppRoute.LcvVehicles -> {
+                                LcvVehiclesScreen(
+                                    brand = uiState.selectedLcvBrand,
+                                    selectedVehicle = uiState.selectedVehicle,
+                                    btState = btState,
+                                    onBack = { viewModel.navigateBack() },
+                                    onOpenBluetoothSheet = { viewModel.setShowBtQuickSheet(true) },
+                                    onSelectVehicle = { viewModel.selectLcvVehicle(it) }
+                                )
+                            }
+
+                            AppRoute.EcuCrankingSetup -> {
+                                EcuCrankingSetupScreen(
+                                    uiState = uiState,
+                                    btState = btState,
+                                    onBack = { viewModel.navigateBack() },
+                                    onOpenBluetoothSheet = { viewModel.setShowBtQuickSheet(true) },
+                                    onSelectVehicleSwitch = { viewModel.navigateTo(AppRoute.LcvBrands) },
+                                    onSelectCrankingMode = { viewModel.selectCrankingMode(it) },
+                                    onRpmChange = { viewModel.updateRpm(it) },
+                                    onRailChange = { viewModel.updateRailPressure(it) },
+                                    onCamSyncToggle = { viewModel.toggleCamSync(it) },
+                                    onToggleSensorPick = { viewModel.toggleEcuPickedSensor(it) },
+                                    onSensorValueChange = { sensor, v -> viewModel.updateSensorValue(sensor, v) },
+                                    onProceedToStartPage = { viewModel.proceedToEcuStartPage() },
+                                    onResetAllToZero = { viewModel.resetAllValuesToZero() },
+                                    onTapSavePreset = { viewModel.openSavePresetDialog() },
+                                    onSavePresetConfirm = { viewModel.saveCurrentPreset(it) },
+                                    onDismissSaveDialog = { viewModel.dismissSavePresetDialog() }
+                                )
+                            }
+
+                            AppRoute.EcuRunPage -> {
+                                EcuRunOnlyScreen(
+                                    uiState = uiState,
+                                    btState = btState,
+                                    onBack = { viewModel.navigateBack() },
+                                    onOpenBluetoothSheet = { viewModel.setShowBtQuickSheet(true) },
+                                    onToggleStartStop = { viewModel.toggleEcuStartStop() },
+                                    onResetAllToZero = { viewModel.resetAllValuesToZero() }
+                                )
+                            }
+
+                            AppRoute.SensorStimulation -> {
+                                SensorStimulationScreen(
+                                    uiState = uiState,
+                                    btState = btState,
+                                    onBack = { viewModel.navigateBack() },
+                                    onOpenBluetoothSheet = { viewModel.setShowBtQuickSheet(true) },
+                                    onToggleTickSensor = { viewModel.toggleSensorStimulationTick(it) },
+                                    onSensorValueChange = { sensor, v -> viewModel.updateSensorValue(sensor, v) },
+                                    onToggleStartStop = { viewModel.toggleSensorStimulationStartStop() },
+                                    onResetAllToZero = { viewModel.resetAllValuesToZero() }
+                                )
+                            }
+
+                            AppRoute.BluetoothDevices -> {
+                                DeviceScreen(
+                                    btState = btState,
+                                    pairedDevices = pairedDevices,
+                                    discoveredDevices = discoveredDevices,
+                                    isScanning = isBtScanning,
+                                    autoReconnect = autoReconnect,
+                                    packetMode = packetMode,
+                                    txLog = txLog,
+                                    packetsSent = packetsSent,
+                                    packetsReceived = packetsReceived,
+                                    lastDeviceAck = lastArduinoAck,
+                                    onRefreshPairedDevices = { viewModel.refreshBluetoothDevices() },
+                                    onStartDiscoveryScan = { viewModel.startBtDiscoveryScan() },
+                                    onStopDiscoveryScan = { viewModel.stopBtDiscoveryScan() },
+                                    onConnectDevice = { viewModel.connectHc05(it) },
+                                    onPairAndConnectDevice = { viewModel.pairAndConnectHc05(it) },
+                                    onDisconnect = { viewModel.disconnectHc05() },
+                                    onToggleAutoReconnect = { viewModel.setAutoReconnect(it) },
+                                    onSelectPacketMode = { viewModel.setSerialPacketMode(it) },
+                                    onSendCustomCommand = { viewModel.sendCustomSerialCommand(it) },
+                                    onSendTestPing = { viewModel.sendTestPing() },
+                                    onClearLogs = { viewModel.clearBtLogs() },
+                                    onBack = { viewModel.navigateBack() }
+                                )
+                            }
+
+                            AppRoute.SavedPresets -> {
+                                SavedPresetsScreen(
+                                    presets = savedPresets,
+                                    onLoadPreset = { viewModel.loadPreset(it) },
+                                    onDeletePreset = { viewModel.deletePreset(it) },
+                                    onBack = { viewModel.navigateBack() }
+                                )
+                            }
+
+                            AppRoute.StimulationHistory -> {
+                                StimulationHistoryScreen(
+                                    historyEntries = stimulationHistory,
+                                    btState = btState,
+                                    onBack = { viewModel.navigateBack() },
+                                    onOpenBluetoothSheet = { viewModel.setShowBtQuickSheet(true) },
+                                    onDeleteEntry = { viewModel.deleteHistoryEntry(it) },
+                                    onClearAll = { viewModel.clearAllHistory() }
+                                )
+                            }
+
+                            AppRoute.ContactInfo -> {
+                                ContactScreen(
+                                    btState = btState,
+                                    onBack = { viewModel.navigateBack() },
+                                    onOpenBluetoothSheet = { viewModel.setShowBtQuickSheet(true) }
+                                )
+                            }
+
+                            AppRoute.Settings -> {
+                                SettingsScreen(
+                                    btState = btState,
+                                    autoReconnect = autoReconnect,
+                                    onToggleAutoReconnect = { viewModel.setAutoReconnect(it) },
+                                    onBack = { viewModel.navigateBack() },
+                                    onOpenBluetoothSettings = { viewModel.navigateTo(AppRoute.BluetoothDevices) },
+                                    onOpenSavedPresets = { viewModel.navigateTo(AppRoute.SavedPresets) },
+                                    onOpenHistory = { viewModel.navigateTo(AppRoute.StimulationHistory) },
+                                    onOpenContact = { viewModel.navigateTo(AppRoute.ContactInfo) }
+                                )
                             }
                         }
-
-                        if (uiState.showBtQuickSheet) {
-                            Hc05ConnectionBottomSheet(
-                                btState = btState,
-                                pairedDevices = pairedDevices,
-                                discoveredDevices = discoveredDevices,
-                                isScanning = isBtScanning,
-                                packetsSent = packetsSent,
-                                packetsReceived = packetsReceived,
-                                onDismiss = { viewModel.setShowBtQuickSheet(false) },
-                                onStartScan = { viewModel.startBtDiscoveryScan() },
-                                onStopScan = { viewModel.stopBtDiscoveryScan() },
-                                onConnectPaired = {
-                                    viewModel.connectHc05(it)
-                                    viewModel.setShowBtQuickSheet(false)
-                                },
-                                onPairAndConnect = {
-                                    viewModel.pairAndConnectHc05(it)
-                                },
-                                onDisconnect = { viewModel.disconnectHc05() },
-                                onSendTestPing = { viewModel.sendTestPing() },
-                                onGoToDeviceTab = { viewModel.selectTab(EcuLabTab.Device) }
-                            )
-                        }
                     }
-                }
 
-                if (uiState.showAdminKeyGeneratorDialog) {
-                    AdminKeyGeneratorDialog(
-                        currentDeviceId = uiState.deviceId,
-                        onVerifyAdminPin = { pin -> viewModel.verifyAdminPin(pin) },
-                        onGenerateKeyForDevice = { targetId ->
-                            EcuLabViewModel.generateUnlockKeyForDeviceId(targetId)
-                        },
-                        onUnlockThisDeviceDirectly = { viewModel.unlockCurrentDeviceAsAdmin() },
-                        onDismiss = { viewModel.setShowAdminKeyGeneratorDialog(false) }
-                    )
+                    if (uiState.showBtQuickSheet) {
+                        Hc05ConnectionBottomSheet(
+                            btState = btState,
+                            pairedDevices = pairedDevices,
+                            discoveredDevices = discoveredDevices,
+                            isScanning = isBtScanning,
+                            packetsSent = packetsSent,
+                            packetsReceived = packetsReceived,
+                            onDismiss = { viewModel.setShowBtQuickSheet(false) },
+                            onStartScan = { viewModel.startBtDiscoveryScan() },
+                            onStopScan = { viewModel.stopBtDiscoveryScan() },
+                            onConnectPaired = {
+                                viewModel.connectHc05(it)
+                                viewModel.setShowBtQuickSheet(false)
+                            },
+                            onPairAndConnect = {
+                                viewModel.pairAndConnectHc05(it)
+                            },
+                            onDisconnect = { viewModel.disconnectHc05() },
+                            onSendTestPing = { viewModel.sendTestPing() },
+                            onGoToDeviceTab = {
+                                viewModel.setShowBtQuickSheet(false)
+                                viewModel.navigateTo(AppRoute.BluetoothDevices)
+                            }
+                        )
+                    }
+
+                    if (uiState.showBtConnectFirstDialog) {
+                        AlertDialog(
+                            onDismissRequest = { viewModel.dismissBtConnectFirstDialog() },
+                            containerColor = CardElevatedSurface,
+                            titleContentColor = TextWhite,
+                            textContentColor = TextSecondary,
+                            icon = {
+                                Icon(
+                                    imageVector = Icons.Default.BluetoothDisabled,
+                                    contentDescription = "Connect Bluetooth First",
+                                    tint = StopRed
+                                )
+                            },
+                            title = {
+                                Text(
+                                    text = "Connect Bluetooth first",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            },
+                            text = {
+                                Text(
+                                    text = "Bluetooth hardware is not connected. Please connect your AK ECU Stimulator Bluetooth unit before starting or stopping stimulation.",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            },
+                            confirmButton = {
+                                Button(
+                                    onClick = {
+                                        viewModel.dismissBtConnectFirstDialog()
+                                        viewModel.setShowBtQuickSheet(true)
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = ElectricBlue),
+                                    modifier = Modifier.testTag("bt_connect_first_open_bt")
+                                ) {
+                                    Text("CONNECT BLUETOOTH", fontWeight = FontWeight.Bold)
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { viewModel.dismissBtConnectFirstDialog() }) {
+                                    Text("CLOSE", color = TextSecondary)
+                                }
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -282,48 +401,75 @@ fun EcuLabApp(
 }
 
 @Composable
-private fun EcuLabBottomBar(
-    activeTab: EcuLabTab,
-    onSelectTab: (EcuLabTab) -> Unit
+private fun AkBottomNavBar(
+    currentRoute: AppRoute,
+    onSelectHome: () -> Unit,
+    onSelectEcu: () -> Unit,
+    onSelectSensors: () -> Unit,
+    onSelectSettings: () -> Unit
 ) {
-    NavigationBar(
-        containerColor = CardDarkSurface,
-        tonalElevation = 0.dp,
-        windowInsets = WindowInsets.navigationBars
-    ) {
-        val items = listOf(
-            Triple(EcuLabTab.Control, "Control", Pair(Icons.Filled.Tune, Icons.Outlined.Tune)),
-            Triple(EcuLabTab.Vehicles, "Vehicles", Pair(Icons.Filled.DirectionsCar, Icons.Outlined.DirectionsCar)),
-            Triple(EcuLabTab.Saved, "Saved", Pair(Icons.Filled.Folder, Icons.Outlined.Folder)),
-            Triple(EcuLabTab.Device, "Device", Pair(Icons.Filled.Bluetooth, Icons.Outlined.Bluetooth))
-        )
+    val isEcuRoute = currentRoute in listOf(
+        AppRoute.EcuCategories,
+        AppRoute.ComingSoonBrands,
+        AppRoute.LcvBrands,
+        AppRoute.LcvVehicles,
+        AppRoute.EcuCrankingSetup,
+        AppRoute.EcuRunPage
+    )
+    val isSettingsRoute = currentRoute in listOf(
+        AppRoute.Settings,
+        AppRoute.BluetoothDevices,
+        AppRoute.SavedPresets,
+        AppRoute.StimulationHistory,
+        AppRoute.ContactInfo
+    )
 
-        items.forEach { (tab, label, icons) ->
-            val selected = activeTab == tab
-            NavigationBarItem(
-                selected = selected,
-                onClick = { onSelectTab(tab) },
-                icon = {
-                    Icon(
-                        imageVector = if (selected) icons.first else icons.second,
-                        contentDescription = label
-                    )
-                },
-                label = {
-                    Text(
-                        text = label,
-                        style = MaterialTheme.typography.labelSmall
-                    )
-                },
-                colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = ElectricBlue,
-                    selectedTextColor = ElectricBlue,
-                    indicatorColor = Color.Transparent,
-                    unselectedIconColor = TextSecondary,
-                    unselectedTextColor = TextSecondary
-                ),
-                modifier = Modifier.testTag("nav_tab_${label.lowercase()}")
+    Column {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(MetalHighlightEdge)
+        )
+        NavigationBar(
+            containerColor = CardDarkSurface,
+            tonalElevation = 0.dp,
+            windowInsets = WindowInsets.navigationBars
+        ) {
+            val navItems = listOf(
+                Triple("Home", currentRoute == AppRoute.Home, Pair(Icons.Filled.Home, Icons.Outlined.Home)) to onSelectHome,
+                Triple("ECU", isEcuRoute, Pair(Icons.Filled.Memory, Icons.Outlined.Memory)) to onSelectEcu,
+                Triple("Sensors", currentRoute == AppRoute.SensorStimulation, Pair(Icons.Filled.Sensors, Icons.Outlined.Sensors)) to onSelectSensors,
+                Triple("Settings", isSettingsRoute, Pair(Icons.Filled.Settings, Icons.Outlined.Settings)) to onSelectSettings
             )
+
+            navItems.forEach { (meta, onClick) ->
+                val (label, selected, icons) = meta
+                NavigationBarItem(
+                    selected = selected,
+                    onClick = onClick,
+                    icon = {
+                        Icon(
+                            imageVector = if (selected) icons.first else icons.second,
+                            contentDescription = label
+                        )
+                    },
+                    label = {
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = CyanGlow,
+                        selectedTextColor = CyanGlow,
+                        indicatorColor = RecessedWell,
+                        unselectedIconColor = TextSecondary,
+                        unselectedTextColor = TextSecondary
+                    ),
+                    modifier = Modifier.testTag("nav_tab_${label.lowercase()}")
+                )
+            }
         }
     }
 }

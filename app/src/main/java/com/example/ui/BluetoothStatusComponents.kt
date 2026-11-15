@@ -69,12 +69,16 @@ import com.example.ui.theme.CardElevatedSurface
 import com.example.ui.theme.CyanGlow
 import com.example.ui.theme.DeepObsidian
 import com.example.ui.theme.ElectricBlue
+import com.example.ui.theme.MetalHighlightEdge
+import com.example.ui.theme.RecessedWell
 import com.example.ui.theme.SignalGreen
 import com.example.ui.theme.SignalGreenBg
 import com.example.ui.theme.StopRed
 import com.example.ui.theme.TextSecondary
 import com.example.ui.theme.TextWhite
+import com.example.ui.theme.TitaniumSilver
 import com.example.ui.theme.WarningAmber
+import com.example.ui.theme.brushedMetalPanel
 
 /**
  * Clean top-of-screen Bluetooth Connection Status Bar.
@@ -169,16 +173,18 @@ fun Hc05StatusIndicatorBar(
         label = "bt_bar_border"
     )
 
-    Surface(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .padding(horizontal = 14.dp, vertical = 6.dp)
+            .brushedMetalPanel(
+                cornerRadius = 12.dp,
+                borderColor = animatedBorderColor,
+                borderWidth = 1.dp,
+                elevated = true
+            )
             .clickable { onOpenQuickManager() }
-            .testTag("hc05_global_status_bar"),
-        shape = RoundedCornerShape(12.dp),
-        color = CardDarkSurface,
-        border = androidx.compose.foundation.BorderStroke(1.dp, animatedBorderColor)
+            .testTag("hc05_global_status_bar")
     ) {
         Row(
             modifier = Modifier
@@ -195,8 +201,8 @@ fun Hc05StatusIndicatorBar(
                     modifier = Modifier
                         .size(36.dp)
                         .clip(CircleShape)
-                        .background(ledColor.copy(alpha = 0.15f))
-                        .border(1.dp, ledColor.copy(alpha = if (isBusy) pulseAlpha else 0.7f), CircleShape),
+                        .background(RecessedWell)
+                        .border(1.dp, ledColor.copy(alpha = if (isBusy) pulseAlpha else 0.75f), CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     if (isBusy) {
@@ -235,7 +241,7 @@ fun Hc05StatusIndicatorBar(
                         Text(
                             text = statusTitle,
                             style = MaterialTheme.typography.labelLarge,
-                            color = TextWhite,
+                            color = TitaniumSilver,
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -255,14 +261,14 @@ fun Hc05StatusIndicatorBar(
             Spacer(modifier = Modifier.width(8.dp))
 
             val actionLabel = if (btState is BtConnectionState.Connected) "CONNECTED" else "PAIR"
-            val actionBg = if (btState is BtConnectionState.Connected) SignalGreenBg else ElectricBlue.copy(alpha = 0.2f)
+            val actionBg = if (btState is BtConnectionState.Connected) SignalGreenBg else RecessedWell
             val actionTextColor = if (btState is BtConnectionState.Connected) SignalGreen else CyanGlow
 
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(8.dp))
                     .background(actionBg)
-                    .border(1.dp, actionTextColor.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                    .border(1.dp, actionTextColor.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
                     .clickable {
                         if (btState is BtConnectionState.Disconnected || btState is BtConnectionState.Error) {
                             onOpenQuickManager()
@@ -526,18 +532,15 @@ private fun CleanBtDeviceRowCard(
     actionLabel: String,
     onClick: () -> Unit
 ) {
-    Surface(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
+            .brushedMetalPanel(
+                cornerRadius = 10.dp,
+                borderColor = if (device.isHc05Candidate) ElectricBlue else BorderSubtle
+            )
             .clickable { onClick() }
-            .testTag("sheet_bt_device_${device.address}"),
-        shape = RoundedCornerShape(10.dp),
-        color = CardDarkSurface,
-        border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            if (device.isHc05Candidate) ElectricBlue else BorderSubtle
-        )
+            .testTag("sheet_bt_device_${device.address}")
     ) {
         Row(
             modifier = Modifier
@@ -561,7 +564,7 @@ private fun CleanBtDeviceRowCard(
                     Text(
                         text = device.name,
                         style = MaterialTheme.typography.titleMedium,
-                        color = TextWhite,
+                        color = TitaniumSilver,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
@@ -576,7 +579,8 @@ private fun CleanBtDeviceRowCard(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .clip(RoundedCornerShape(6.dp))
-                    .background(ButtonDarkSurface)
+                    .background(RecessedWell)
+                    .border(1.dp, MetalHighlightEdge, RoundedCornerShape(6.dp))
                     .padding(horizontal = 12.dp, vertical = 6.dp)
             ) {
                 Icon(
