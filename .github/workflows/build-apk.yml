@@ -32,10 +32,10 @@ jobs:
           yes | "$SDKMANAGER" --sdk_root="$ANDROID_SDK_ROOT" --licenses > /dev/null 2>&1 || true
           "$SDKMANAGER" --sdk_root="$ANDROID_SDK_ROOT" "platform-tools" "platforms;android-36" "build-tools;36.0.0"
 
-      - name: Setup Gradle 9.3.1
+      - name: Setup Gradle 9.9.1
         uses: gradle/actions/setup-gradle@v6
         with:
-          gradle-version: '9.3.1'
+          gradle-version: '9.9.1'
 
       - name: Generate debug.keystore if not present
         run: |
