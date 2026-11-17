@@ -3,6 +3,6 @@
     <item
         android:width="66dp"
         android:height="66dp"
-        android:drawable="@drawable/img_ak_hi_fi_logo_1794745516657"
+        android:drawable="@drawable/img_ak_ecu_stimulator_logo"
         android:gravity="center" />
 </layer-list>

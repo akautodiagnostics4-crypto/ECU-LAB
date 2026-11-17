@@ -192,6 +192,7 @@ fun EcuCrankingSetupScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
+                        val isLightStudio = isLightStudioVehicleDrawable(uiState.selectedVehicle)
                         Image(
                             painter = painterResource(id = vehiclePreviewDrawable(uiState.selectedVehicle)),
                             contentDescription = uiState.selectedVehicle.modelName,
@@ -199,8 +200,10 @@ fun EcuCrankingSetupScreen(
                                 .width(116.dp)
                                 .height(68.dp)
                                 .clip(RoundedCornerShape(10.dp))
-                                .border(1.dp, CyanGlow.copy(alpha = 0.5f), RoundedCornerShape(10.dp)),
-                            contentScale = ContentScale.Crop
+                                .background(if (isLightStudio) Color.White else RecessedWell)
+                                .border(1.dp, CyanGlow.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                                .padding(if (isLightStudio) 3.dp else 0.dp),
+                            contentScale = if (isLightStudio) ContentScale.Fit else ContentScale.Crop
                         )
 
                         Column(modifier = Modifier.weight(1f)) {
@@ -531,6 +534,7 @@ fun EcuRunOnlyScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.fillMaxWidth()
                         ) {
+                            val isLightStudio = isLightStudioVehicleDrawable(uiState.selectedVehicle)
                             Image(
                                 painter = painterResource(id = vehiclePreviewDrawable(uiState.selectedVehicle)),
                                 contentDescription = uiState.selectedVehicle.modelName,
@@ -538,8 +542,10 @@ fun EcuRunOnlyScreen(
                                     .width(110.dp)
                                     .height(66.dp)
                                     .clip(RoundedCornerShape(10.dp))
-                                    .border(1.dp, BorderSubtle, RoundedCornerShape(10.dp)),
-                                contentScale = ContentScale.Crop
+                                    .background(if (isLightStudio) Color.White else RecessedWell)
+                                    .border(1.dp, BorderSubtle, RoundedCornerShape(10.dp))
+                                    .padding(if (isLightStudio) 3.dp else 0.dp),
+                                contentScale = if (isLightStudio) ContentScale.Fit else ContentScale.Crop
                             )
                             Spacer(modifier = Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {

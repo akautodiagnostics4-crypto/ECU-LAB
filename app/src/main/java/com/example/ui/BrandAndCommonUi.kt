@@ -63,20 +63,50 @@ import com.example.ui.theme.TitaniumSilver
 import com.example.ui.theme.WarningAmber
 
 /**
- * Selects the authentic Indian studio vehicle render drawable for each LCV profile.
+ * Selects the authentic vehicle picture drawable for each LCV profile,
+ * prioritizing the user-uploaded vehicle images by model ID.
  */
 fun vehiclePreviewDrawable(vehicle: VehicleModel): Int {
-    return when (vehicle.visualType) {
-        VehicleVisualType.MINI_TRUCK -> R.drawable.img_lcv_minitruck_ace_1794745518081
-        VehicleVisualType.PICKUP -> R.drawable.img_lcv_pickup_bolero_1794745518078
-        VehicleVisualType.VAN -> R.drawable.img_lcv_force_traveller_1794749348476
-        VehicleVisualType.SUV -> R.drawable.img_lcv_utility_camper_1794749350453
-        VehicleVisualType.COMMERCIAL_TRUCK -> R.drawable.img_lcv_indian_truck_1794749348585
+    return when (vehicle.id) {
+        "tata_intra_v30_v50" -> R.drawable.vehicle_tata_intra
+        "mahindra_bolero_pickup" -> R.drawable.vehicle_mahindra_pickup
+        "mahindra_bolero_camper" -> R.drawable.vehicle_mahindra_bolero
+        "mahindra_supro" -> R.drawable.vehicle_mahindra_supro
+        "mahindra_jeeto" -> R.drawable.vehicle_mahindra_jeeto
+        "mahindra_maxximo" -> R.drawable.vehicle_mahindra_maxximo
+        "mahindra_loadking_optimo" -> R.drawable.vehicle_mahindra_loadking
+        "mahindra_furio_7" -> R.drawable.vehicle_mahindra_furio7
+        "ashok_leyland_dost" -> R.drawable.vehicle_ashok_dost
+        "ashok_leyland_bada_dost" -> R.drawable.vehicle_ashok_bada_dost
+        "ashok_leyland_saathi" -> R.drawable.vehicle_ashok_saathi
+        else -> when (vehicle.visualType) {
+            VehicleVisualType.MINI_TRUCK -> R.drawable.img_lcv_minitruck_ace_1794745518081
+            VehicleVisualType.PICKUP -> R.drawable.img_lcv_pickup_bolero_1794745518078
+            VehicleVisualType.VAN -> R.drawable.img_lcv_force_traveller_1794749348476
+            VehicleVisualType.SUV -> R.drawable.img_lcv_utility_camper_1794749350453
+            VehicleVisualType.COMMERCIAL_TRUCK -> R.drawable.img_lcv_indian_truck_1794749348585
+        }
     }
 }
 
 /**
- * High-Fi AK ECU STIMULATOR hexagonal badge image.
+ * Studio cutout images on light/white backgrounds should be displayed with ContentScale.Fit
+ * on a white/light studio frame so vehicle bumpers and cargo beds are never cropped.
+ */
+fun isLightStudioVehicleDrawable(vehicle: VehicleModel): Boolean {
+    return vehicle.id in setOf(
+        "tata_intra_v30_v50",
+        "mahindra_bolero_camper",
+        "mahindra_jeeto",
+        "mahindra_maxximo",
+        "mahindra_furio_7",
+        "mahindra_loadking_optimo",
+        "ashok_leyland_bada_dost"
+    )
+}
+
+/**
+ * AK ECU STIMULATOR app emblem uploaded by user.
  */
 @Composable
 fun HighFiAppLogoBadge(
@@ -90,7 +120,7 @@ fun HighFiAppLogoBadge(
             .border(1.2.dp, CyanGlow.copy(alpha = 0.65f), RoundedCornerShape(12.dp))
     ) {
         Image(
-            painter = painterResource(id = R.drawable.img_ak_hi_fi_logo_1794745516657),
+            painter = painterResource(id = R.drawable.img_ak_ecu_stimulator_logo),
             contentDescription = "AK ECU STIMULATOR Logo",
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop
@@ -189,6 +219,37 @@ fun VehicleBrandBadge(
     sizeDp: Dp = 36.dp
 ) {
     val upper = brand.uppercase()
+
+    // Use real uploaded official brand images when provided
+    val uploadedLogoRes = when {
+        upper.contains("ASHOK") -> R.drawable.brand_logo_ashok_leyland
+        upper.contains("MAHINDRA") -> R.drawable.brand_logo_mahindra
+        upper.contains("BHARATBENZ") || upper.contains("BENZ") -> R.drawable.brand_logo_bharatbenz
+        upper.contains("MARUTI") -> R.drawable.brand_logo_maruti_suzuki
+        else -> null
+    }
+
+    if (uploadedLogoRes != null) {
+        val isBharatBenz = upper.contains("BHARATBENZ") || upper.contains("BENZ")
+        val isMaruti = upper.contains("MARUTI")
+        Box(
+            modifier = modifier
+                .size(sizeDp)
+                .clip(if (isBharatBenz) CircleShape else RoundedCornerShape(8.dp))
+                .background(if (isBharatBenz) Color.Transparent else Color.White)
+                .padding(if (isBharatBenz || isMaruti) 0.dp else 3.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Image(
+                painter = painterResource(id = uploadedLogoRes),
+                contentDescription = "$brand Logo",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = if (isMaruti) ContentScale.Crop else ContentScale.Fit
+            )
+        }
+        return
+    }
+
     Canvas(modifier = modifier.size(sizeDp)) {
         val w = size.width
         val h = size.height

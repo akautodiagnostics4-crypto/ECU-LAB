@@ -244,7 +244,7 @@ object VehicleCatalog {
         VehicleModel(
             id = "mahindra_bolero_camper",
             brand = "MAHINDRA",
-            modelName = "Bolero Camper / Maxx",
+            modelName = "Bolero Power+ / Camper",
             category = "LCV",
             ecuSystem = "Bosch EDC17C53 / EDC17C63",
             visualType = VehicleVisualType.SUV,
@@ -272,7 +272,7 @@ object VehicleCatalog {
         VehicleModel(
             id = "mahindra_jeeto",
             brand = "MAHINDRA",
-            modelName = "Jeeto Strong",
+            modelName = "Jeeto Plus / Strong",
             category = "LCV",
             ecuSystem = "Bosch EDC17C63 Single Cylinder",
             visualType = VehicleVisualType.MINI_TRUCK,
@@ -282,6 +282,34 @@ object VehicleCatalog {
             defaultEct = 85,
             defaultBoostMap = 104,
             defaultMaf = 12
+        ),
+        VehicleModel(
+            id = "mahindra_maxximo",
+            brand = "MAHINDRA",
+            modelName = "Maxximo Plus",
+            category = "LCV",
+            ecuSystem = "Bosch EDC17C53 / C2 CRDI",
+            visualType = VehicleVisualType.MINI_TRUCK,
+            crankPattern = "60-2",
+            defaultRpm = 700,
+            defaultRail = 350,
+            defaultEct = 86,
+            defaultBoostMap = 108,
+            defaultMaf = 16
+        ),
+        VehicleModel(
+            id = "mahindra_loadking_optimo",
+            brand = "MAHINDRA",
+            modelName = "Loadking Optimo",
+            category = "LCV",
+            ecuSystem = "Bosch EDC17CV54 CRDI",
+            visualType = VehicleVisualType.COMMERCIAL_TRUCK,
+            crankPattern = "60-2",
+            defaultRpm = 700,
+            defaultRail = 350,
+            defaultEct = 88,
+            defaultBoostMap = 122,
+            defaultMaf = 26
         ),
         VehicleModel(
             id = "mahindra_furio_7",

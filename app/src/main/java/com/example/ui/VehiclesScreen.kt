@@ -130,7 +130,7 @@ private fun CategoryOptionCard(
             WarningAmber
         )
         VehicleCategoryType.LCV -> Triple(
-            R.drawable.img_lcv_pickup_bolero_1794745518078,
+            R.drawable.vehicle_mahindra_pickup,
             Icons.Default.LocalShipping,
             SignalGreen
         )
@@ -561,16 +561,20 @@ fun LcvVehiclesScreen(
                             .testTag("vehicle_card_${vehicle.id}")
                     ) {
                         Column(modifier = Modifier.fillMaxWidth()) {
+                            val isLightStudio = isLightStudioVehicleDrawable(vehicle)
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(155.dp)
+                                    .height(165.dp)
+                                    .background(if (isLightStudio) Color.White else Color(0xFF061024))
                             ) {
                                 Image(
                                     painter = painterResource(id = vehiclePreviewDrawable(vehicle)),
                                     contentDescription = "${vehicle.brand} ${vehicle.modelName}",
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(if (isLightStudio) 8.dp else 0.dp),
+                                    contentScale = if (isLightStudio) ContentScale.Fit else ContentScale.Crop
                                 )
 
                                 Box(
@@ -580,7 +584,7 @@ fun LcvVehiclesScreen(
                                             Brush.verticalGradient(
                                                 colors = listOf(
                                                     Color.Transparent,
-                                                    Color(0xFF061024).copy(alpha = 0.88f)
+                                                    if (isLightStudio) Color(0xFF061024).copy(alpha = 0.25f) else Color(0xFF061024).copy(alpha = 0.88f)
                                                 )
                                             )
                                         )
